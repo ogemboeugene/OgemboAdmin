@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Auth Debug</title>
+</head>
+<body>
+    <h1>Authentication Debug</h1>
+    <div id="debug-info"></div>
+    
+    <script>
+        const debugInfo = document.getElementById('debug-info');
+        
+        // Check localStorage contents
+        const allKeys = Object.keys(localStorage);
+        let html = '<h2>LocalStorage Contents:</h2>';
+        html += '<ul>';
+        
+        allKeys.forEach(key => {
+            const value = localStorage.getItem(key);
+            html += `<li><strong>${key}:</strong> ${value ? value.substring(0, 50) + (value.length > 50 ? '...' : '') : 'null'}</li>`;
+        });
+        
+        html += '</ul>';
+        
+        html += '<h2>Token Check:</h2>';
+        html += '<ul>';
+        html += `<li><strong>access_token:</strong> ${localStorage.getItem('access_token') ? 'Found' : 'Not found'}</li>`;
+        html += `<li><strong>authToken:</strong> ${localStorage.getItem('authToken') ? 'Found' : 'Not found'}</li>`;
+        html += `<li><strong>token:</strong> ${localStorage.getItem('token') ? 'Found' : 'Not found'}</li>`;
+        html += '</ul>';
+        
+        debugInfo.innerHTML = html;
+    </script>
+</body>
+</html>

@@ -1,0 +1,12 @@
+rules_version = '2';
+
+// Firebase Storage Security Rules for OgemboAdmin
+// Temporary rules allowing public access for testing
+// TODO: Implement proper authentication later
+service firebase.storage {
+  match /b/{bucket}/o {
+    match /{allPaths=**} {
+       allow read, write: if true; // Allow public access for now
+    }
+  }
+}

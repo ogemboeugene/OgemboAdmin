@@ -67,8 +67,74 @@ const Tasks = ({ filter, showNewTaskForm = false }) => {
     category: '',
     page: 1,
     limit: 12
-  });
-  
+  });  const [predefinedTags] = useState([
+    // Technology Tags
+    { 
+      category: 'Technology', 
+      tags: [
+        'frontend', 'backend', 'fullstack', 'mobile', 'web', 'api', 
+        'react', 'nodejs', 'python', 'javascript', 'typescript', 
+        'database', 'mongodb', 'postgresql', 'mysql', 'redis',
+        'graphql', 'rest-api', 'microservices', 'cloud', 'aws', 'azure'
+      ] 
+    },
+    // Security & Authentication Tags  
+    { 
+      category: 'Security', 
+      tags: [
+        'authentication', 'security', 'jwt', 'oauth', 'encryption',
+        'ssl', 'https', 'authorization', 'rbac', 'security-audit',
+        'penetration-testing', 'vulnerability-assessment', 'gdpr',
+        'compliance', 'data-protection'
+      ] 
+    },
+    // Development Process Tags
+    { 
+      category: 'Development', 
+      tags: [
+        'bug-fix', 'enhancement', 'feature', 'refactor', 'optimization',
+        'testing', 'unit-tests', 'integration-tests', 'e2e-tests',
+        'documentation', 'deployment', 'ci/cd', 'code-review',
+        'performance', 'monitoring'
+      ] 
+    },
+    // UI/UX & Design Tags
+    { 
+      category: 'Design', 
+      tags: [
+        'ui/ux', 'responsive', 'accessibility', 'wireframe', 'prototype',
+        'user-research', 'usability-testing', 'design-system',
+        'branding', 'mobile-first', 'dark-mode', 'animations'
+      ] 
+    },
+    // Priority & Urgency Tags
+    { 
+      category: 'Priority', 
+      tags: [
+        'urgent', 'high-priority', 'medium-priority', 'low-priority',
+        'critical', 'blocker', 'hotfix', 'quick-win', 'technical-debt'
+      ] 
+    },
+    // Project Type Tags
+    { 
+      category: 'Project Type', 
+      tags: [
+        'portfolio', 'client-work', 'personal', 'open-source', 
+        'prototype', 'mvp', 'production', 'maintenance', 'research',
+        'proof-of-concept', 'migration', 'upgrade'
+      ] 
+    },
+    // Business & Operations Tags
+    { 
+      category: 'Business', 
+      tags: [
+        'marketing', 'sales', 'analytics', 'reporting', 'admin',
+        'user-management', 'content-management', 'seo', 'social-media',
+        'email-campaign', 'automation', 'integration'
+      ] 
+    }
+  ]);
+    
   // Get current location and params
   const location = useLocation();
   const params = useParams();
@@ -108,11 +174,59 @@ const Tasks = ({ filter, showNewTaskForm = false }) => {
   });
     // Tag input state
   const [tagInput, setTagInput] = useState('');
-  
+    // Form validation state
+  const [formErrors, setFormErrors] = useState({});
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // Validate form fields
+  const validateForm = () => {
+    const errors = {};
+
+    // Required field validation
+    if (!newTask.title.trim()) {
+      errors.title = 'Task title is required';
+    }
+
+    if (!newTask.projectId) {
+      errors.projectId = 'Project selection is required';
+    }
+
+    if (!newTask.assigneeId) {
+      errors.assigneeId = 'Assignee selection is required';
+    }
+
+    if (!newTask.dueDate) {
+      errors.dueDate = 'Due date is required';
+    } else {
+      // Validate due date is not in the past
+      const dueDate = new Date(newTask.dueDate);
+      const now = new Date();
+      if (dueDate < now) {
+        errors.dueDate = 'Due date cannot be in the past';
+      }
+    }
+
+    // Optional field validation
+    if (newTask.estimatedHours && (isNaN(newTask.estimatedHours) || parseFloat(newTask.estimatedHours) < 0)) {
+      errors.estimatedHours = 'Estimated hours must be a positive number';
+    }
+
+    setFormErrors(errors);
+    return Object.keys(errors).length === 0;
+  };
+  // Clear specific form error
+  const clearFormError = (fieldName) => {
+    setFormErrors(prev => {
+      const newErrors = { ...prev };
+      delete newErrors[fieldName];
+      return newErrors;
+    });
+  };
   // Dropdown data state
   const [projects, setProjects] = useState([]);
   const [teamMembers, setTeamMembers] = useState([]);
-  const [loadingDropdowns, setLoadingDropdowns] = useState(false);// Fetch tasks data
+  const [loadingDropdowns, setLoadingDropdowns] = useState(false);
+  const [loadingTeamMembers, setLoadingTeamMembers] = useState(false);// Fetch tasks data
   useEffect(() => {
     const fetchTasks = async () => {
       setIsLoading(true);
@@ -226,72 +340,122 @@ const Tasks = ({ filter, showNewTaskForm = false }) => {
         setIsLoading(false);
       }
     };    fetchTasks();
-  }, [apiFilters, searchQuery, sortBy, sortDirection, currentPage, pageSize]);
-
-  // Fetch dropdown data for assignees and projects
+  }, [apiFilters, searchQuery, sortBy, sortDirection, currentPage, pageSize]);  // Fetch dropdown data for projects initially
   useEffect(() => {
-    const fetchDropdownData = async () => {
+    const fetchProjects = async () => {
       setLoadingDropdowns(true);
       try {
-        console.log('🔄 Fetching dropdown data...');
+        console.log('🔄 Fetching projects...');
         
-        // Fetch projects and team members concurrently
-        const [projectsResponse, teamResponse] = await Promise.all([
-          apiService.projects.getAll(),
-          apiService.projects.team.get()
-        ]);
-        
+        const projectsResponse = await apiService.projects.getAll();
         console.log('✅ Projects response:', projectsResponse);
-        console.log('✅ Team response:', teamResponse);
         
-        // Handle projects data
+        // Handle projects data with enhanced validation
         let projectsData = [];
         if (projectsResponse.data?.success && projectsResponse.data.data?.projects) {
           projectsData = projectsResponse.data.data.projects;
+        } else if (projectsResponse.data?.data?.projects) {
+          projectsData = projectsResponse.data.data.projects;
         } else if (projectsResponse.data && Array.isArray(projectsResponse.data)) {
           projectsData = projectsResponse.data;
+        } else if (projectsResponse.data?.projects) {
+          projectsData = projectsResponse.data.projects;
         }
         
-        // Handle team members data
-        let teamData = [];
-        if (teamResponse.data?.success && teamResponse.data.data) {
-          teamData = teamResponse.data.data;
-        } else if (teamResponse.data && Array.isArray(teamResponse.data)) {
-          teamData = teamResponse.data;
-        }
-        
-        // Transform data for dropdowns
-        const transformedProjects = projectsData.map(project => ({
-          id: project.id,
-          name: project.title || project.name,
-          value: project.id,
-          label: project.title || project.name
-        }));
-        
-        const transformedTeamMembers = teamData.map(member => ({
-          id: member.id,
-          name: member.name,
-          email: member.email,
-          value: member.id,
-          label: `${member.name} (${member.email})`
-        }));
+        // Validate and transform projects data
+        const transformedProjects = projectsData
+          .filter(project => project && project.id) // Filter out invalid entries
+          .map(project => ({
+            id: project.id,
+            name: project.title || project.name || `Project ${project.id}`,
+            value: project.id,
+            label: project.title || project.name || `Project ${project.id}`
+          }));
         
         setProjects(transformedProjects);
-        setTeamMembers(transformedTeamMembers);
+        console.log('🔄 Final transformed projects:', transformedProjects);
         
-        console.log('🔄 Transformed projects:', transformedProjects);
-        console.log('🔄 Transformed team members:', transformedTeamMembers);
+        // Log if any data is missing
+        if (transformedProjects.length === 0) {
+          console.warn('⚠️ No projects found for dropdown');
+        }
         
       } catch (error) {
-        console.error('❌ Error fetching dropdown data:', error);
-        // Don't show error to user, just log it - dropdowns will be empty but form still works
+        console.error('❌ Error fetching projects:', error);
+        // Don't show error to user, just log it - dropdown will be empty but form still works
       } finally {
         setLoadingDropdowns(false);
       }
-    };
-
-    fetchDropdownData();
+    };    fetchProjects();
   }, []);
+
+  // Fetch team members when a project is selected
+  const fetchTeamMembersForProject = async (projectId) => {
+    if (!projectId) {
+      setTeamMembers([]);
+      return;
+    }
+
+    setLoadingTeamMembers(true);
+    try {
+      console.log('🔄 Fetching team members for project:', projectId);
+      
+      const teamResponse = await apiService.projects.team.get(projectId);
+      console.log('✅ Team response:', teamResponse);
+      
+      // Handle team members data with enhanced validation
+      let teamData = [];
+      if (teamResponse.data?.success && teamResponse.data.data?.teamMembers) {
+        teamData = teamResponse.data.data.teamMembers;
+      } else if (teamResponse.data?.data?.teamMembers) {
+        teamData = teamResponse.data.data.teamMembers;
+      } else if (teamResponse.data?.teamMembers) {
+        teamData = teamResponse.data.teamMembers;
+      } else if (teamResponse.data && Array.isArray(teamResponse.data)) {
+        teamData = teamResponse.data;
+      }
+      
+      // Validate and transform team members data
+      const transformedTeamMembers = teamData
+        .filter(member => member && (member.user?.id || member.id)) // Filter out invalid entries
+        .map(member => {
+          // Handle nested user object structure
+          const user = member.user || member;
+          const profile = user.profile || {};
+          
+          return {
+            id: user.id,
+            name: profile.firstName && profile.lastName 
+              ? `${profile.firstName} ${profile.lastName}`
+              : user.name || user.username || user.email || `User ${user.id}`,
+            email: user.email || '',
+            value: user.id,
+            label: user.email 
+              ? `${profile.firstName && profile.lastName 
+                  ? `${profile.firstName} ${profile.lastName}`
+                  : user.name || user.username || 'Unknown'} (${user.email})`
+              : profile.firstName && profile.lastName 
+                ? `${profile.firstName} ${profile.lastName}`
+                : user.name || user.username || user.email || `User ${user.id}`,
+            role: member.role || 'member'
+          };
+        });
+      
+      setTeamMembers(transformedTeamMembers);
+      console.log('🔄 Final transformed team members:', transformedTeamMembers);
+      
+      // Log if any data is missing
+      if (transformedTeamMembers.length === 0) {
+        console.warn('⚠️ No team members found for project:', projectId);
+      }
+      
+    } catch (error) {
+      console.error('❌ Error fetching team members for project:', projectId, error);
+      setTeamMembers([]);
+    } finally {
+      setLoadingTeamMembers(false);
+    }
+  };
   
   // Apply filters and sorting
   useEffect(() => {
@@ -385,6 +549,16 @@ const Tasks = ({ filter, showNewTaskForm = false }) => {
   // Toggle sort direction
   const toggleSortDirection = () => {
     setSortDirection(prev => prev === 'asc' ? 'desc' : 'asc');
+  };
+
+  // Add predefined tag to new task
+  const handleAddPredefinedTag = (tag) => {
+    if (!newTask.tags.includes(tag)) {
+      setNewTask(prev => ({
+        ...prev,
+        tags: [...prev.tags, tag]
+      }));
+    }
   };
   
   // Change sort field
@@ -563,14 +737,13 @@ const Tasks = ({ filter, showNewTaskForm = false }) => {
       const taskData = {
         title: editingTask.title.trim(),
         description: editingTask.description.trim(),
-        status: editingTask.status,
-        priority: editingTask.priority,
+        status: editingTask.status,        priority: editingTask.priority,
         dueDate: editingTask.dueDate,
         tags: editingTask.tags,
         
         // Include additional fields if they exist
-        assigneeId: editingTask.assigneeId || editingTask.assignee?.id || null,
-        projectId: editingTask.projectId || editingTask.project?.id || null,
+        assigneeId: editingTask.assigneeId ? parseInt(editingTask.assigneeId, 10) : (editingTask.assignee?.id ? parseInt(editingTask.assignee.id, 10) : null),
+        projectId: editingTask.projectId ? parseInt(editingTask.projectId, 10) : (editingTask.project?.id ? parseInt(editingTask.project.id, 10) : null),
         estimatedHours: editingTask.estimatedHours || null,
         actualHours: editingTask.actualHours || null,
         category: editingTask.category || 'General',
@@ -671,16 +844,54 @@ const Tasks = ({ filter, showNewTaskForm = false }) => {
     setEditingTask(prev => ({
       ...prev,
       [name]: value
-    }));
-  };
+    }));  };
   
   // Handle input change for new task
-  const handleNewTaskInputChange = (e) => {
+  const handleNewTaskInputChange = async (e) => {
     const { name, value } = e.target;
+    
+    // Add debugging for dropdown selections
+    if (name === 'projectId') {
+      console.log('🔄 Project selected:', { name, value, availableProjects: projects });
+    }
+    if (name === 'assigneeId') {
+      console.log('🔄 Assignee selected:', { name, value, availableMembers: teamMembers });
+    }
+    
+    // Update form state
     setNewTask(prev => ({
       ...prev,
       [name]: value
     }));
+    
+    // Clear field-specific error when user starts typing
+    if (formErrors[name]) {
+      clearFormError(name);
+    }
+    
+    // Handle cascading dropdown: fetch team members when project is selected
+    if (name === 'projectId') {
+      console.log('🔄 Project changed, fetching team members for project:', value);
+      
+      // Clear current assignee selection when project changes
+      setNewTask(prev => ({
+        ...prev,
+        assigneeId: ''
+      }));
+      
+      // Clear assignee error if it exists
+      if (formErrors.assigneeId) {
+        clearFormError('assigneeId');
+      }
+      
+      // Fetch team members for the selected project
+      if (value && value !== '') {
+        await fetchTeamMembersForProject(value);
+      } else {
+        // Clear team members if no project is selected
+        setTeamMembers([]);
+      }
+    }
   };
   
   // Add tag to new task
@@ -719,26 +930,23 @@ const Tasks = ({ filter, showNewTaskForm = false }) => {
       ...prev,
       tags: prev.tags.filter(tag => tag !== tagToRemove)
     }));
-  };
-  // Create new task
+  };  // Create new task
   const handleCreateTask = async (e) => {
     e.preventDefault();
     
-    // Validate required fields
-    if (!newTask.title.trim()) {
-      alert('Task title is required');
+    // Clear any previous errors
+    setFormErrors({});
+    setIsSubmitting(true);
+    
+    // Validate form using comprehensive validation
+    if (!validateForm()) {
+      setIsSubmitting(false);
       return;
     }
-    
-    if (!newTask.dueDate) {
-      alert('Due date is required');
-      return;
-    }
-    
+      
     try {
       console.log('🔄 Creating new task:', newTask);
-      
-      // Prepare comprehensive task data for API - normalization will be handled by apiService
+        // Prepare comprehensive task data for API - normalization will be handled by apiService
       const taskData = {
         title: newTask.title.trim(),
         description: newTask.description.trim(),
@@ -748,13 +956,19 @@ const Tasks = ({ filter, showNewTaskForm = false }) => {
         tags: newTask.tags,
         category: newTask.category,
         estimatedHours: newTask.estimatedHours ? parseFloat(newTask.estimatedHours) : null,
-        assigneeId: newTask.assigneeId || null,
-        projectId: newTask.projectId || null,
-        
-        // Additional metadata
+        assigneeId: newTask.assigneeId ? parseInt(newTask.assigneeId, 10) : null,
+        projectId: newTask.projectId ? parseInt(newTask.projectId, 10) : null,
+          // Additional metadata
         createdBy: null, // Will be set by backend based on authentication
         notes: newTask.notes || null
       };
+      
+      // Debug: Log the data types being sent to API
+      console.log('🔍 Task data being sent to API:', {
+        ...taskData,
+        projectIdType: typeof taskData.projectId,
+        assigneeIdType: typeof taskData.assigneeId
+      });
       
       const response = await apiService.tasks.create(taskData);
       console.log('✅ Task created:', response);
@@ -829,8 +1043,7 @@ const Tasks = ({ filter, showNewTaskForm = false }) => {
       
     } catch (error) {
       console.error('❌ Error creating task:', error);
-      
-      // Enhanced error handling
+        // Enhanced error handling
       let errorMessage = 'Failed to create task. Please try again.';
       
       if (error.response?.status === 401) {
@@ -848,6 +1061,8 @@ const Tasks = ({ filter, showNewTaskForm = false }) => {
       }
       
       alert(errorMessage);
+    } finally {
+      setIsSubmitting(false);
     }
   };
   
@@ -1796,9 +2011,8 @@ const Tasks = ({ filter, showNewTaskForm = false }) => {
                 </button>
               </div>
               
-              <form className="task-form" onSubmit={handleCreateTask}>
-                <div className="form-group">
-                  <label htmlFor="title">Title</label>
+              <form className="task-form" onSubmit={handleCreateTask}>                <div className="form-group">
+                  <label htmlFor="title">Title <span className="required">*</span></label>
                   <input
                     id="title"
                     type="text"
@@ -1806,11 +2020,14 @@ const Tasks = ({ filter, showNewTaskForm = false }) => {
                     value={newTask.title}
                     onChange={handleNewTaskInputChange}
                     placeholder="Task title"
+                    className={formErrors.title ? 'error' : ''}
                     required
                   />
+                  {formErrors.title && (
+                    <div className="error-message">{formErrors.title}</div>
+                  )}
                 </div>
-                
-                <div className="form-group">
+                  <div className="form-group">
                   <label htmlFor="description">Description</label>
                   <textarea
                     id="description"
@@ -1819,7 +2036,11 @@ const Tasks = ({ filter, showNewTaskForm = false }) => {
                     onChange={handleNewTaskInputChange}
                     placeholder="Task description"
                     rows="3"
+                    className={formErrors.description ? 'error' : ''}
                   ></textarea>
+                  {formErrors.description && (
+                    <div className="error-message">{formErrors.description}</div>
+                  )}
                 </div>
                 
                 <div className="form-row">
@@ -1850,17 +2071,20 @@ const Tasks = ({ filter, showNewTaskForm = false }) => {
                       <option value="low">Low</option>
                     </select>
                   </div>
-                </div>
-                  <div className="form-group">
-                  <label htmlFor="dueDate">Due Date</label>
+                </div>                <div className="form-group">
+                  <label htmlFor="dueDate">Due Date <span className="required">*</span></label>
                   <input
                     id="dueDate"
                     type="datetime-local"
                     name="dueDate"
                     value={newTask.dueDate}
                     onChange={handleNewTaskInputChange}
+                    className={formErrors.dueDate ? 'error' : ''}
                     required
                   />
+                  {formErrors.dueDate && (
+                    <div className="error-message">{formErrors.dueDate}</div>
+                  )}
                 </div>
                 
                 {/* Additional Task Fields */}
@@ -1883,8 +2107,7 @@ const Tasks = ({ filter, showNewTaskForm = false }) => {
                       <option value="Research">Research</option>
                     </select>
                   </div>
-                  
-                  <div className="form-group">
+                    <div className="form-group">
                     <label htmlFor="estimatedHours">Estimated Hours</label>
                     <input
                       id="estimatedHours"
@@ -1895,41 +2118,63 @@ const Tasks = ({ filter, showNewTaskForm = false }) => {
                       placeholder="0"
                       min="0"
                       step="0.5"
+                      className={formErrors.estimatedHours ? 'error' : ''}
                     />
+                    {formErrors.estimatedHours && (
+                      <div className="error-message">{formErrors.estimatedHours}</div>
+                    )}
                   </div>
                 </div>
-                  <div className="form-row">
-                  <div className="form-group">
-                    <label htmlFor="assigneeId">Assignee (Optional)</label>
-                    <select
+                  <div className="form-row">                  <div className="form-group">
+                    <label htmlFor="assigneeId">Assignee <span className="required">*</span></label>                    <select
                       id="assigneeId"
                       name="assigneeId"
                       value={newTask.assigneeId}
                       onChange={handleNewTaskInputChange}
-                      disabled={loadingDropdowns}
+                      disabled={loadingTeamMembers || !newTask.projectId}
+                      className={formErrors.assigneeId ? 'error' : ''}
                     >
-                      <option value="">Select assignee...</option>
+                      <option value="">
+                        {loadingTeamMembers 
+                          ? 'Loading team members...' 
+                          : !newTask.projectId
+                            ? 'Please select a project first'
+                            : teamMembers.length === 0 
+                              ? 'No team members available' 
+                              : 'Select assignee...'
+                        }
+                      </option>
                       {teamMembers.map(member => (
                         <option key={member.id} value={member.id}>
                           {member.label}
                         </option>
                       ))}
                     </select>
-                    {loadingDropdowns && (
+                    {loadingTeamMembers && (
                       <span className="loading-text">Loading team members...</span>
                     )}
-                  </div>
-                  
-                  <div className="form-group">
-                    <label htmlFor="projectId">Project (Optional)</label>
+                    {!loadingTeamMembers && !newTask.projectId && (
+                      <span className="info-text">Select a project to see available team members</span>
+                    )}
+                    {!loadingTeamMembers && newTask.projectId && teamMembers.length === 0 && (
+                      <span className="error-text">No team members found for this project.</span>
+                    )}
+                    {formErrors.assigneeId && (
+                      <div className="error-message">{formErrors.assigneeId}</div>
+                    )}
+                  </div>                    <div className="form-group">
+                    <label htmlFor="projectId">Project <span className="required">*</span></label>
                     <select
                       id="projectId"
                       name="projectId"
                       value={newTask.projectId}
                       onChange={handleNewTaskInputChange}
                       disabled={loadingDropdowns}
+                      className={formErrors.projectId ? 'error' : ''}
                     >
-                      <option value="">Select project...</option>
+                      <option value="">
+                        {loadingDropdowns ? 'Loading projects...' : 'Select project...'}
+                      </option>
                       {projects.map(project => (
                         <option key={project.id} value={project.id}>
                           {project.label}
@@ -1939,63 +2184,109 @@ const Tasks = ({ filter, showNewTaskForm = false }) => {
                     {loadingDropdowns && (
                       <span className="loading-text">Loading projects...</span>
                     )}
+                    {!loadingDropdowns && projects.length === 0 && (
+                      <span className="empty-data-text">No projects available</span>
+                    )}
+                    {formErrors.projectId && (
+                      <div className="error-message">{formErrors.projectId}</div>
+                    )}
                   </div>
                 </div>
                 
                 <div className="form-group">
                   <label htmlFor="tagInput">Tags</label>
-                  <div className="tag-input-container">
-                    <input
-                      id="tagInput"
-                      type="text"
-                      value={tagInput}
-                      onChange={(e) => setTagInput(e.target.value)}
-                      placeholder="Add a tag"
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter') {
-                          e.preventDefault();
-                          handleAddTag();
-                        }
-                      }}
-                    />
-                    <button 
-                      type="button" 
-                      className="btn-sm"
-                      onClick={handleAddTag}
-                    >
-                      Add
-                    </button>
-                  </div>
                   
-                  <div className="tags-list">
-                    {newTask.tags.map((tag, index) => (
-                      <span key={index} className="tag">
-                        {tag}
-                        <button 
-                          type="button" 
-                          className="tag-remove" 
-                          onClick={() => handleRemoveTag(tag)}
-                        >
-                          &times;
-                        </button>
-                      </span>
+                  {/* Predefined Tags */}
+                  <div className="predefined-tags-section">
+                    {predefinedTags.map((category, categoryIndex) => (
+                      <div key={categoryIndex} className="tag-category">
+                        <h4 className="tag-category-title">{category.category}</h4>
+                        <div className="predefined-tags">
+                          {category.tags.map((tag, tagIndex) => (
+                            <button
+                              key={tagIndex}
+                              type="button"
+                              className={`predefined-tag ${newTask.tags.includes(tag) ? 'selected' : ''}`}
+                              onClick={() => handleAddPredefinedTag(tag)}
+                              disabled={newTask.tags.includes(tag)}
+                            >
+                              {tag}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
                     ))}
                   </div>
+                  
+                  {/* Custom Tag Input */}
+                  <div className="custom-tag-section">
+                    <h4 className="tag-section-title">Add Custom Tag</h4>
+                    <div className="tag-input-container">
+                      <input
+                        id="tagInput"
+                        type="text"
+                        value={tagInput}
+                        onChange={(e) => setTagInput(e.target.value)}
+                        placeholder="Add a custom tag"
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            e.preventDefault();
+                            handleAddTag();
+                          }
+                        }}
+                      />
+                      <button 
+                        type="button" 
+                        className="btn-sm"
+                        onClick={handleAddTag}
+                      >
+                        Add
+                      </button>
+                    </div>
+                  </div>
+                  
+                  {/* Selected Tags Display */}
+                  <div className="selected-tags-section">
+                    <h4 className="tag-section-title">Selected Tags ({newTask.tags.length})</h4>
+                    <div className="tags-list">
+                      {newTask.tags.map((tag, index) => (
+                        <span key={index} className="tag selected-tag">
+                          {tag}
+                          <button 
+                            type="button" 
+                            className="tag-remove" 
+                            onClick={() => handleRemoveTag(tag)}
+                          >
+                            &times;
+                          </button>
+                        </span>
+                      ))}
+                    </div>
+                  </div>
                 </div>
-                
-                <div className="form-actions">
+                  <div className="form-actions">
                   <button 
                     type="button" 
                     className="btn-secondary"
                     onClick={() => setNewTaskFormVisible(false)}
+                    disabled={isSubmitting}
                   >
                     Cancel
                   </button>
                   <button 
                     type="submit" 
                     className="btn-primary"
+                    disabled={isSubmitting}
                   >
-                    <FaPlus /> Create Task
+                    {isSubmitting ? (
+                      <>
+                        <span className="loading-spinner"></span> Creating...
+                      </>
+                    ) : (
+                      <>
+                        <FaPlus /> Create Task
+                      </>
+                    )}
                   </button>
                 </div>
               </form>

@@ -37,14 +37,18 @@ import {
   FaExclamationTriangle,
   FaArrowLeft
 } from 'react-icons/fa';
+import apiService from '../../services/api/apiService';
+import firebaseStorageService from '../../services/firebase/storageService';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 
 const ProfileForm = () => {
   const { user } = useAuth();
-  const [activeTab, setActiveTab] = useState('personal');
-  const [formData, setFormData] = useState({
+  const [activeTab, setActiveTab] = useState(() => {
+    // Get saved tab from localStorage on initial load
+    return localStorage.getItem('profileFormActiveTab') || 'personal';
+  });  const [formData, setFormData] = useState({
     // Personal Information
     name: '',
     title: '',
@@ -55,6 +59,13 @@ const ProfileForm = () => {
     profileImage: '',
     coverImage: '',
     resume: '',
+    
+    // Professional Information
+    currentPosition: '',
+    currentCompany: '',
+    yearsOfExperience: 0,
+    hourlyRate: '',
+    currency: 'USD',
     
     // Contact Information
     email: '',
@@ -92,96 +103,298 @@ const ProfileForm = () => {
     relocation: false,
     visibilityPreference: 'public',
     
+    // Settings
+    theme: 'light',
+    fontSize: 'medium',
+    animationsEnabled: true,
+    notificationsEnabled: true,
+    emailNotifications: true,
+    pushNotifications: true,
+    showEmail: true,
+    showPhone: true,
+    allowSearchEngineIndexing: true,
+    twoFactorEnabled: false,
+    
     // Education & Experience (excluded for now)
     education: [],
     experience: []
   });
-  
-  const [isLoading, setIsLoading] = useState(true);
+    const [isLoading, setIsLoading] = useState(true);  // Save active tab to localStorage whenever it changes
+  useEffect(() => {
+    localStorage.setItem('profileFormActiveTab', activeTab);
+  }, [activeTab]);
+
+  // Restore scroll position after reload
+  useEffect(() => {
+    const savedScrollPosition = localStorage.getItem('profileFormScrollPosition');
+    if (savedScrollPosition) {
+      setTimeout(() => {
+        window.scrollTo(0, parseInt(savedScrollPosition));
+        localStorage.removeItem('profileFormScrollPosition');
+      }, 100);
+    }
+  }, []);
+
+  // Save scroll position before reload
+  const saveScrollPosition = () => {
+    localStorage.setItem('profileFormScrollPosition', window.scrollY.toString());
+  };
+
   const [isSaving, setIsSaving] = useState(false);
+  const [isUploading, setIsUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(0);
   const [skillInput, setSkillInput] = useState('');
   const [languageInput, setLanguageInput] = useState('');
   const [languageProficiency, setLanguageProficiency] = useState('intermediate');
-  const [showLocationDetails, setShowLocationDetails] = useState(false);
-  const [errors, setErrors] = useState({});
-  const [successMessage, setSuccessMessage] = useState('');
-  const [showSuccessMessage, setShowSuccessMessage] = useState(false);
+  const [showLocationDetails, setShowLocationDetails] = useState(false);  const [errors, setErrors] = useState({});
+  const [successMessage, setSuccessMessage] = useState('');  const [showSuccessMessage, setShowSuccessMessage] = useState(false);
   const [isDirty, setIsDirty] = useState(false);
+  const [isReloading, setIsReloading] = useState(false);
   
-  const profileImageRef = useRef(null);
+  // Resume management state
+  const [resumes, setResumes] = useState([]);
+  const [resumeUploading, setResumeUploading] = useState(false);
+  const [resumeUploadProgress, setResumeUploadProgress] = useState(0);
+  const [showResumeDeleteConfirm, setShowResumeDeleteConfirm] = useState(null);
+    const profileImageRef = useRef(null);
   const coverImageRef = useRef(null);
   const resumeRef = useRef(null);
-  
+    // Import useAuth hook
+  const { refreshTokens } = useAuth();
+
   // Fetch profile data
   useEffect(() => {
     const fetchProfileData = async () => {
       setIsLoading(true);
       try {
-        // Simulate API call
-        await new Promise(resolve => setTimeout(resolve, 1000));
-          // Sample data with user fallbacks
-        const data = {
-          // Personal Information
-          name: user?.profile?.firstName && user?.profile?.lastName 
-            ? `${user.profile.firstName} ${user.profile.lastName}`
-            : 'Eugene Brian Ogembo',
-          title: user?.profile?.title || user?.profile?.currentPosition || 'Software Developer',
-          bio: user?.profile?.bio || 'Passionate software developer with a focus on web and mobile applications. Experienced in React, Flutter, and backend technologies.',
-          dob: user?.profile?.dateOfBirth || '1995-05-15',
-          gender: user?.profile?.gender || 'male',
-          nationality: user?.profile?.nationality || 'Kenyan',
-          profileImage: user?.profile?.avatar || '/assets/pro.jpg',
-          coverImage: user?.profile?.coverImage || '/assets/cover.jpg',
-          resume: user?.profile?.resume || '/assets/resume.pdf',
-          
-          // Contact Information
-          email: user?.email || 'eugene@example.com',
-          phone: user?.profile?.phone || '+254 700 123456',
-          location: {
-            address: user?.profile?.address || '123 Tech Avenue',
-            city: user?.profile?.city || 'Nairobi',
-            state: user?.profile?.state || '',
-            country: user?.profile?.country || 'Kenya',
-            zipCode: user?.profile?.zipCode || '00100'
-          },
-          
-          // Social Links
-          website: user?.profile?.website || 'https://eugeneogembo.com',
-          github: user?.profile?.githubProfile || 'https://github.com/ogemboeugene',
-          linkedin: user?.profile?.linkedinProfile || 'https://linkedin.com/in/ogemboeugene',
-          twitter: user?.profile?.twitterProfile || 'https://twitter.com/ogemboeugene',
-          facebook: user?.profile?.facebookProfile || 'https://facebook.com/ogemboeugene',
-          instagram: user?.profile?.instagramProfile || '',
-          dribbble: user?.profile?.dribbbleProfile || '',
-          behance: user?.profile?.behanceProfile || '',
-          medium: user?.profile?.mediumProfile || 'https://medium.com/@ogemboeugene',
-          youtube: user?.profile?.youtubeProfile || '',
-          stackoverflow: user?.profile?.stackoverflowProfile || '',
-          codepen: user?.profile?.codepenProfile || 'https://codepen.io/ogemboeugene',
-          
-          // Skills & Languages
-          skills: ['React', 'Node.js', 'Flutter', 'Python', 'Django', 'JavaScript', 'TypeScript'],
-          languages: [
-            { name: 'English', proficiency: 'fluent' },
-            { name: 'Swahili', proficiency: 'native' },
-            { name: 'French', proficiency: 'beginner' }
-          ],
-          
-          // Preferences
-          availability: 'full-time',
-          jobType: ['permanent', 'contract'],
-          remoteWork: true,
-          relocation: false,
-          visibilityPreference: 'public',
-          
-          // Education & Experience (excluded for now)
-          education: [],
-          experience: []
-        };
+        // Call the actual profile API endpoint
+        let response;
+        try {
+          response = await apiService.profile.get();
+        } catch (error) {
+          // Automatically handle 401 errors with token refresh
+          if (error.response && error.response.status === 401) {
+            console.log('🔑 Token expired, attempting refresh...');
+            const refreshResult = await refreshTokens();
+            
+            if (refreshResult.success) {
+              console.log('✅ Token refreshed, retrying profile fetch');
+              response = await apiService.profile.get();
+            } else {
+              throw new Error('Token refresh failed. Please log in again.');
+            }
+          } else {
+            throw error;
+          }
+        }
         
-        setFormData(data);
+        console.log('Profile API response:', response);
+        
+        // Check if API call was successful
+        if (response.data && response.data.success) {
+          const userData = response.data.data.user;
+          const profileData = userData.profile;
+          const settingsData = userData.settings;
+          
+          // Transform API response to match component's form data structure
+          // Helper function to parse social links from JSON string or object
+          const parseSocialLinks = (profileData) => {
+            try {
+              if (typeof profileData?.socialLinks === 'string') {
+                return JSON.parse(profileData.socialLinks);
+              } else if (typeof profileData?.socialLinks === 'object') {
+                return profileData.socialLinks;
+              }
+              return {};
+            } catch (error) {
+              console.warn('Failed to parse social links:', error);
+              return {};
+            }
+          };
+          
+          const socialLinks = parseSocialLinks(profileData);
+          
+          // Helper function to extract address from nested object
+          const extractAddress = (profileData) => {
+            if (profileData?.address && typeof profileData.address === 'object') {
+              return {
+                address: profileData.address.street || '',
+                city: profileData.address.city || '',
+                state: profileData.address.state || '',
+                country: profileData.address.country || '',
+                zipCode: profileData.address.zipCode || ''
+              };
+            }
+            return {
+              address: profileData?.address || '',
+              city: profileData?.city || '',
+              state: profileData?.state || '',
+              country: profileData?.country || '',
+              zipCode: profileData?.zipCode || ''
+            };
+          };
+          
+          // Helper function to process resumes array to get primary resume
+          const getPrimaryResume = (resumes) => {
+            if (!resumes || !Array.isArray(resumes)) return '';
+            const primaryResume = resumes.find(resume => resume.isPrimary) || resumes[0];
+            return primaryResume?.url || '';
+          };
+          
+          // Helper function to process job types
+          const processJobTypes = (jobTypes) => {
+            if (!jobTypes) return [];
+            if (Array.isArray(jobTypes)) return jobTypes;            if (typeof jobTypes === 'string') {
+              try {
+                return JSON.parse(jobTypes);
+              } catch (error) {
+                return [jobTypes];
+              }
+            }
+            return [];
+          };
+          
+          // Helper function to map availability from backend to frontend
+          const mapAvailabilityFromBackend = (availability) => {
+            const mapping = {
+              'Full_time': 'full-time',
+              'Part_time': 'part-time',
+              'Contract': 'contract',
+              'Freelance': 'freelance',
+              'Not_available': 'not-available'
+            };
+            return mapping[availability] || availability?.toLowerCase() || '';
+          };
+          
+          // Helper function to map job types from backend to frontend
+          const processJobTypesFromBackend = (jobTypes) => {
+            const mapping = {
+              'Permanent': 'permanent',
+              'Contract': 'contract',
+              'Freelance': 'freelance',
+              'Internship': 'internship'
+            };
+            
+            if (!jobTypes) return [];
+            if (Array.isArray(jobTypes)) {
+              return jobTypes.map(type => mapping[type] || type?.toLowerCase() || type);
+            }
+            if (typeof jobTypes === 'string') {              try {
+                const parsed = JSON.parse(jobTypes);
+                return Array.isArray(parsed) ? parsed.map(type => mapping[type] || type?.toLowerCase() || type) : [mapping[parsed] || parsed?.toLowerCase() || parsed];
+              } catch (error) {
+                return [mapping[jobTypes] || jobTypes?.toLowerCase() || jobTypes];
+              }
+            }
+            return [];
+          };
+          
+          console.log('🔍 Profile data from API:');
+          console.log('profileData.dateOfBirth:', profileData?.dateOfBirth);
+          console.log('profileData.gender:', profileData?.gender);
+          console.log('profileData.nationality:', profileData?.nationality);
+          console.log('profileData.address:', profileData?.address);
+          console.log('profileData.resumes:', profileData?.resumes);
+          console.log('profileData.languages:', profileData?.languages);
+          console.log('profileData.jobTypes:', profileData?.jobTypes);
+          
+          const locationData = extractAddress(profileData);
+          
+          const data = {
+            // Personal Information - comprehensive mapping
+            name: `${profileData?.firstName || ''} ${profileData?.lastName || ''}`.trim() || 
+                 userData.email.split('@')[0],
+            title: profileData?.title || profileData?.currentPosition || '',
+            bio: profileData?.bio || '',
+            dob: profileData?.dateOfBirth || '',
+            gender: profileData?.gender || '',
+            nationality: profileData?.nationality || '',
+            profileImage: profileData?.avatar,
+            coverImage: profileData?.coverImage || '/assets/cover.jpg',
+            resume: getPrimaryResume(profileData?.resumes),
+            
+            // Professional Information
+            currentPosition: profileData?.currentPosition || '',
+            currentCompany: profileData?.currentCompany || '',
+            yearsOfExperience: profileData?.yearsOfExperience || 0,
+            hourlyRate: profileData?.hourlyRate || '',
+            currency: profileData?.currency || 'USD',
+            
+            // Contact Information
+            email: userData?.email || '',
+            phone: profileData?.phone || '',
+            location: locationData,
+            
+            // Social Links - comprehensive mapping
+            website: socialLinks?.website || profileData?.website || '',
+            github: socialLinks?.github || profileData?.githubProfile || '',
+            linkedin: socialLinks?.linkedin || profileData?.linkedinProfile || '',
+            twitter: socialLinks?.twitter || profileData?.twitterProfile || '',
+            facebook: socialLinks?.facebook || profileData?.facebookProfile || '',
+            instagram: socialLinks?.instagram || profileData?.instagramProfile || '',
+            dribbble: socialLinks?.dribbble || profileData?.dribbbleProfile || '',
+            behance: socialLinks?.behance || profileData?.behanceProfile || '',
+            medium: socialLinks?.medium || profileData?.mediumProfile || '',
+            youtube: socialLinks?.youtube || profileData?.youtubeProfile || '',
+            stackoverflow: socialLinks?.stackoverflow || profileData?.stackoverflowProfile || '',
+            codepen: socialLinks?.codepen || profileData?.codepenProfile || '',
+            
+            // Skills - map from the skills array with proper structure
+            skills: profileData?.skills?.map(skill => ({
+              name: skill.name,
+              proficiencyLevel: skill.proficiencyLevel,
+              category: skill.category,
+              yearsExperience: skill.yearsExperience,
+              isFeatured: skill.isFeatured
+            })) || [],
+            
+            // Languages - handle both array and JSON string formats
+            languages: Array.isArray(profileData?.languages)
+              ? profileData.languages.map(lang => ({
+                  name: lang.name,
+                  proficiency: lang.proficiency
+                }))
+              : (profileData?.languages ? 
+                  (typeof profileData.languages === 'string' ? 
+                    JSON.parse(profileData.languages) : 
+                    [profileData.languages]
+                  ) : []),
+            
+            // Work Preferences - comprehensive mapping with proper format conversion
+            availability: mapAvailabilityFromBackend(profileData?.availability || 'Full_time'),
+            jobType: processJobTypesFromBackend(profileData?.jobTypes),
+            remoteWork: profileData?.remoteWorkAvailable === true || profileData?.remoteWorkAvailable === 1,
+            relocation: profileData?.openToRelocation === true || profileData?.openToRelocation === 1,
+            
+            // Profile Visibility
+            visibilityPreference: profileData?.profileVisibility === 'public' ? 'public' : 
+                                 (profileData?.profileVisibility === 'connections_only' ? 'connections' : 'private'),
+            
+            // Settings - map from settings object
+            theme: settingsData?.theme || 'light',
+            fontSize: settingsData?.fontSize || 'medium',
+            animationsEnabled: settingsData?.animationsEnabled === 1,            notificationsEnabled: settingsData?.notificationsEnabled === 1,
+            emailNotifications: settingsData?.emailNotifications === 1,
+            pushNotifications: settingsData?.pushNotifications === 1,
+            showEmail: settingsData?.showEmail === 1,
+            showPhone: settingsData?.showPhone === 1,
+            allowSearchEngineIndexing: settingsData?.allowSearchEngineIndexing === 1,
+            twoFactorEnabled: settingsData?.twoFactorEnabled === 1,
+            
+            // Reference to related data collections
+            education: userData?.education || [],
+            experience: userData?.workExperiences || [],
+            resumes: profileData?.resumes || []
+          };
+
+          setFormData(data);
+          setResumes(profileData?.resumes || []);
+          console.log('✅ Processed profile data with all fields:', data);
+        } else {
+          throw new Error('Failed to fetch profile data');
+        }
       } catch (error) {
-        console.error('Error fetching profile data:', error);
+        console.error('❌ Error fetching profile data:', error);
         setErrors(prev => ({
           ...prev,
           general: 'Failed to load profile data. Please refresh the page.'
@@ -193,27 +406,11 @@ const ProfileForm = () => {
     
     fetchProfileData();
   }, []);
-  
   // Handle form input changes
   const handleChange = (e) => {
     const { name, value, type, checked } = e.target;
     
-    if (type === 'checkbox') {
-      setFormData(prev => ({
-        ...prev,
-        [name]: checked
-      }));
-    } else if (name.includes('.')) {
-      // Handle nested objects like location.city
-      const [parent, child] = name.split('.');
-      setFormData(prev => ({
-        ...prev,
-        [parent]: {
-          ...prev[parent],
-          [child]: value
-        }
-      }));
-    } else if (name === 'jobType' && type === 'checkbox') {
+    if (name === 'jobType' && type === 'checkbox') {
       // Handle multiple checkboxes for job type
       if (checked) {
         setFormData(prev => ({
@@ -226,6 +423,21 @@ const ProfileForm = () => {
           jobType: prev.jobType.filter(item => item !== value)
         }));
       }
+    } else if (name.includes('.')) {
+      // Handle nested objects like location.city
+      const [parent, child] = name.split('.');
+      setFormData(prev => ({
+        ...prev,
+        [parent]: {
+          ...prev[parent],
+          [child]: value
+        }
+      }));
+    } else if (type === 'checkbox') {
+      setFormData(prev => ({
+        ...prev,
+        [name]: checked
+      }));
     } else {
       setFormData(prev => ({
         ...prev,
@@ -244,13 +456,21 @@ const ProfileForm = () => {
     
     setIsDirty(true);
   };
-  
-  // Handle skill input
+    // Handle skill input
   const addSkill = () => {
-    if (skillInput.trim() && !formData.skills.includes(skillInput.trim())) {
+    if (skillInput.trim() && !formData.skills.some(skill => 
+      (typeof skill === 'string' ? skill : skill.name) === skillInput.trim()
+    )) {
+      const newSkill = {
+        name: skillInput.trim(),
+        proficiencyLevel: 'intermediate',
+        category: 'general',
+        yearsExperience: 0,
+        isFeatured: false
+      };
       setFormData(prev => ({
         ...prev,
-        skills: [...prev.skills, skillInput.trim()]
+        skills: [...prev.skills, newSkill]
       }));
       setSkillInput('');
       setIsDirty(true);
@@ -280,30 +500,344 @@ const ProfileForm = () => {
       setIsDirty(true);
     }
   };
-  
-  const removeLanguage = (languageName) => {
+    const removeLanguage = (languageName) => {
     setFormData(prev => ({
       ...prev,
       languages: prev.languages.filter(lang => lang.name !== languageName)
     }));
-    setIsDirty(true);
-  };
-  
-  // Handle file uploads
-  const handleFileChange = (e, type) => {
+    setIsDirty(true);  };
+
+  // Handle file uploads with Firebase Storage integration
+  const handleFileChange = async (e, type) => {
     const file = e.target.files[0];
     if (!file) return;
     
-    // In a real app, you would upload the file to a server
-    // For this example, we'll create a local URL
-    const fileUrl = URL.createObjectURL(file);
-    
-    setFormData(prev => ({
+    // Clear any previous errors
+    setErrors(prev => ({
       ...prev,
-      [type]: fileUrl
+      [type]: ''
     }));
     
-    setIsDirty(true);
+    try {
+      // Validate file based on type
+      if (type === 'profileImage' || type === 'coverImage') {
+        // Image validation
+        const allowedImageTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp'];
+        if (!allowedImageTypes.includes(file.type)) {
+          throw new Error('Please upload a valid image file (JPEG, PNG, GIF, WebP)');
+        }
+        if (file.size > 5 * 1024 * 1024) { // 5MB limit
+          throw new Error('Image file size must be less than 5MB');
+        }
+      } else if (type === 'resume') {
+        // Resume/CV validation
+        const allowedResumeTypes = ['application/pdf', 'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'];
+        if (!allowedResumeTypes.includes(file.type)) {
+          throw new Error('Please upload a valid resume file (PDF, DOC, DOCX)');
+        }
+        if (file.size > 10 * 1024 * 1024) { // 10MB limit for documents
+          throw new Error('Resume file size must be less than 10MB');
+        }
+      }
+
+      // Handle different file types
+      if (type === 'profileImage') {
+        setIsUploading(true);
+        setUploadProgress(0);
+        
+        try {
+          // Step 1: Upload to Firebase Storage with progress tracking
+          const firebaseUrl = await firebaseStorageService.uploadImage(
+            file, 
+            'profiles', // folder name
+            null, // auto-generate filename
+            (progress) => {
+              setUploadProgress(progress);
+            }
+          );
+
+          console.log('Firebase upload successful, URL:', firebaseUrl);
+            
+          // Step 2: Upload avatar via the dedicated avatar API endpoint
+          // Send JSON with the Firebase URL
+          const avatarData = { avatarUrl: firebaseUrl };
+          
+          const response = await apiService.profile.avatar.upload(avatarData);
+        
+          if (response.data && response.data.success) {
+            // Update form data with the Firebase URL
+            setFormData(prev => ({
+              ...prev,
+              profileImage: firebaseUrl
+            }));
+            
+            setIsDirty(true);
+            
+            // Show success message
+            setSuccessMessage('Profile image uploaded successfully!');
+            setShowSuccessMessage(true);
+            setTimeout(() => setShowSuccessMessage(false), 3000);
+          } else {
+            // If API update fails, delete the uploaded image from Firebase
+            await firebaseStorageService.deleteImage(firebaseUrl);
+            throw new Error(response.data?.message || 'Failed to save avatar to database');
+          }
+        } catch (error) {
+          console.error('Error in profile image upload:', error);
+          throw error;
+        } finally {
+          setIsUploading(false);
+          setUploadProgress(0);
+        }
+        
+      } else if (type === 'coverImage') {
+        // For cover image - create a local preview for now
+        // Note: Cover image upload can be implemented similarly if needed
+        const fileUrl = URL.createObjectURL(file);
+        
+        setFormData(prev => ({
+          ...prev,
+          coverImage: fileUrl
+        }));
+        
+        setIsDirty(true);
+        
+        // Show temporary success message
+        setSuccessMessage('Cover image updated (local preview)!');
+        setShowSuccessMessage(true);
+        setTimeout(() => setShowSuccessMessage(false), 3000);
+
+      } else if (type === 'resume') {
+        // Handle resume upload with Firebase Storage integration
+        setResumeUploading(true);
+        setResumeUploadProgress(0);
+          try {
+          // Step 1: Upload to Firebase Storage with progress tracking
+          const firebaseUrl = await firebaseStorageService.uploadDocument(
+            file, 
+            'resumes', // folder name
+            null, // auto-generate filename
+            (progress) => {
+              setResumeUploadProgress(progress);
+            }
+          );
+            console.log('Firebase resume upload successful, URL:', firebaseUrl);
+          
+          // Step 2: Upload resume via the dedicated resume API endpoint
+          // Send JSON data as expected by the backend API
+          const resumeData = {
+            resumeUrl: firebaseUrl,
+            title: file.name.replace(/\.[^/.]+$/, ""), // Remove file extension for title
+            fileName: file.name,
+            fileSize: file.size,
+            fileType: file.type,
+            isPrimary: resumes.length === 0 // First resume becomes primary
+          };
+          
+          const response = await apiService.profile.resume.upload(resumeData);
+          
+          if (response.data && response.data.success) {
+            // Add new resume to the resumes list
+            const newResume = {
+              id: response.data.data.resumeId,
+              url: firebaseUrl,
+              fileName: file.name,
+              fileSize: file.size,
+              uploadDate: new Date().toISOString(),
+              isPrimary: resumes.length === 0 // First resume becomes primary
+            };
+            
+            setResumes(prev => [...prev, newResume]);
+            
+            // Update form data with the new resume if it's the first one
+            if (resumes.length === 0) {
+              setFormData(prev => ({
+                ...prev,
+                resume: firebaseUrl
+              }));
+            }
+            
+            setIsDirty(true);
+            
+            // Show success message
+            setSuccessMessage('Resume uploaded successfully!');
+            setShowSuccessMessage(true);
+            setTimeout(() => setShowSuccessMessage(false), 3000);
+          } else {
+            // If API update fails, delete the uploaded file from Firebase
+            await firebaseStorageService.deleteImage(firebaseUrl);
+            throw new Error(response.data?.message || 'Failed to save resume to database');
+          }
+        } catch (error) {
+          console.error('Error in resume upload:', error);
+          throw error;
+        } finally {
+          setResumeUploading(false);
+          setResumeUploadProgress(0);
+        }
+      }
+    } catch (error) {
+      console.error(`Error uploading ${type}:`, error);
+      setErrors(prev => ({
+        ...prev,
+        [type]: error.message || `Failed to upload ${type.replace('Image', ' image')}. Please try again.`      }));
+    }
+  };
+
+  // Resume management functions
+  const handleDeleteResume = async (resumeId, resumeUrl) => {
+      try {
+        setIsUploading(true);
+        
+        // Step 1: Delete from API
+        const response = await apiService.profile.resume.delete(resumeId);
+        
+        if (response.data && response.data.success) {
+          // Step 2: Delete from Firebase Storage if it's a Firebase URL
+          if (resumeUrl && resumeUrl.includes('firebase')) {
+            await firebaseStorageService.deleteImage(resumeUrl);
+          }
+          
+          // Step 3: Update local state
+          setResumes(prev => {
+            const updatedResumes = prev.filter(resume => resume.id !== resumeId);
+            
+            // If deleted resume was primary and there are other resumes, make the first one primary
+            if (updatedResumes.length > 0) {
+              const deletedResume = prev.find(resume => resume.id === resumeId);
+              if (deletedResume?.isPrimary) {
+                updatedResumes[0].isPrimary = true;
+                // Set new primary resume
+                handleSetPrimaryResume(updatedResumes[0].id);
+              }
+            }
+            
+            return updatedResumes;
+          });
+          
+          // Update form data if this was the primary resume
+          const deletedResume = resumes.find(resume => resume.id === resumeId);
+          if (deletedResume?.isPrimary) {
+            const remainingResumes = resumes.filter(resume => resume.id !== resumeId);
+            setFormData(prev => ({
+              ...prev,
+              resume: remainingResumes.length > 0 ? remainingResumes[0].url : ''
+            }));
+          }
+          
+          setIsDirty(true);
+          setSuccessMessage('Resume deleted successfully!');
+          setShowSuccessMessage(true);
+          setTimeout(() => setShowSuccessMessage(false), 3000);
+        } else {
+          throw new Error(response.data?.message || 'Failed to delete resume');
+        }
+      } catch (error) {
+        console.error('Error deleting resume:', error);
+        setErrors(prev => ({
+          ...prev,
+          resume: error.message || 'Failed to delete resume. Please try again.'
+        }));
+      } finally {
+        setIsUploading(false);
+        setShowResumeDeleteConfirm(null);
+      }
+    };
+    
+    const handleSetPrimaryResume = async (resumeId) => {
+      try {
+        const response = await apiService.profile.resume.setPrimary(resumeId);
+        
+        if (response.data && response.data.success) {
+          // Update local state
+          setResumes(prev => prev.map(resume => ({
+            ...resume,
+            isPrimary: resume.id === resumeId
+          })));
+          
+          // Update form data with new primary resume
+          const newPrimaryResume = resumes.find(resume => resume.id === resumeId);
+          if (newPrimaryResume) {
+            setFormData(prev => ({
+              ...prev,
+              resume: newPrimaryResume.url
+            }));
+          }
+          
+          setIsDirty(true);
+          setSuccessMessage('Primary resume updated!');
+          setShowSuccessMessage(true);
+          setTimeout(() => setShowSuccessMessage(false), 3000);        } else {
+          throw new Error(response.data?.message || 'Failed to set primary resume');
+        }
+      } catch (error) {
+        console.error('Error setting primary resume:', error);
+        setErrors(prev => ({
+          ...prev,
+          resume: error.message || 'Failed to set primary resume. Please try again.'
+        }));
+      }
+    };
+    
+    const formatFileSize = (bytes) => {
+      if (bytes === 0) return '0 Bytes';
+      const k = 1024;
+      const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+      const i = Math.floor(Math.log(bytes) / Math.log(k));
+      return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+    };
+    
+    const formatUploadDate = (dateString) => {
+      const date = new Date(dateString);
+      return date.toLocaleDateString('en-US', {
+        year: 'numeric',
+        month: 'short',
+        day: 'numeric'
+      });
+    };
+    
+    // Handle profile image removal
+  const handleRemoveProfileImage = async () => {
+    try {
+      if (!formData.profileImage) {
+        return;
+      }
+      
+      setIsUploading(true);
+      
+      // Step 1: Delete from Firebase Storage if it's a Firebase URL
+      if (formData.profileImage.includes('firebase')) {
+        await firebaseStorageService.deleteImage(formData.profileImage);
+      }
+      
+      // Step 2: Remove avatar via the dedicated avatar API endpoint
+      const response = await apiService.profile.avatar.remove();
+      
+      if (response.data && response.data.success) {
+        // Update form data to remove the image
+        setFormData(prev => ({
+          ...prev,
+          profileImage: ''
+        }));
+        
+        setIsDirty(true);
+        
+        // Show success message
+        setSuccessMessage('Profile image removed successfully!');
+        setShowSuccessMessage(true);
+        setTimeout(() => setShowSuccessMessage(false), 3000);
+      } else {
+        throw new Error(response.data?.message || 'Failed to remove avatar from database');
+      }
+    } catch (error) {
+      console.error('Error removing profile image:', error);
+      setErrors(prev => ({
+        ...prev,
+        profileImage: error.message || 'Failed to remove profile image. Please try again.'
+      }));
+    } finally {
+      setIsUploading(false);
+    }
   };
   
   const triggerFileInput = (ref) => {
@@ -330,8 +864,7 @@ const ProfileForm = () => {
     if (formData.website && !urlRegex.test(formData.website)) {
       newErrors.website = 'Please enter a valid URL';
     }
-    
-    if (formData.github && !urlRegex.test(formData.github)) {
+      if (formData.github && !urlRegex.test(formData.github)) {
       newErrors.github = 'Please enter a valid URL';
     }
     
@@ -342,8 +875,7 @@ const ProfileForm = () => {
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
   };
-  
-  // Handle form submission
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     
@@ -359,23 +891,227 @@ const ProfileForm = () => {
     setIsSaving(true);
     
     try {
-      // Simulate API call
-      await new Promise(resolve => setTimeout(resolve, 1500));
+      // Prepare data for API
+      const [firstName, ...lastNameArr] = formData.name.trim().split(' ');
+      const lastName = lastNameArr.join(' ');
       
-      // Success
-      setSuccessMessage('Profile updated successfully!');
-      setShowSuccessMessage(true);
-      setIsDirty(false);
+      // Helper function to process skills for API submission
+      const processSkillsForAPI = (skills) => {
+        if (!Array.isArray(skills)) return [];
+        return skills.map(skill => {
+          if (typeof skill === 'string') {
+            return {
+              name: skill,
+              proficiencyLevel: 'intermediate',
+              category: 'general',
+              yearsExperience: 0,
+              isFeatured: false
+            };
+          }
+          return {
+            name: skill.name || skill,
+            proficiencyLevel: skill.proficiencyLevel || 'intermediate',
+            category: skill.category || 'general',
+            yearsExperience: skill.yearsExperience || 0,
+            isFeatured: skill.isFeatured || false
+          };
+        });
+      };
       
-      // Hide success message after 3 seconds
-      setTimeout(() => {
-        setShowSuccessMessage(false);
-      }, 3000);
+      // Helper function to process languages for API submission
+      const processLanguagesForAPI = (languages) => {
+        if (!Array.isArray(languages)) return [];        return languages.map(lang => {
+          if (typeof lang === 'string') {
+            return {
+              name: lang,
+              proficiency: 'intermediate'
+            };
+          }
+          return {
+            name: lang.name || lang,
+            proficiency: lang.proficiency || 'intermediate'
+          };
+        });
+      };
+      
+      // Helper function to map availability for backend
+      const mapAvailabilityForBackend = (availability) => {
+        const mapping = {
+          'full-time': 'Full_time',
+          'part-time': 'Part_time',
+          'contract': 'Contract',
+          'freelance': 'Freelance',
+          'not-available': 'Not_available'
+        };
+        return mapping[availability] || availability;
+      };
+      
+      // Helper function to map job types for backend
+      const mapJobTypesForBackend = (jobTypes) => {
+        const mapping = {
+          'permanent': 'Permanent',
+          'contract': 'Contract',
+          'freelance': 'Freelance',
+          'internship': 'Internship'
+        };
+        
+        if (!Array.isArray(jobTypes)) {
+          jobTypes = [jobTypes].filter(Boolean);
+        }
+        
+        return jobTypes.map(type => mapping[type] || type);
+      };
+      
+      // Prepare comprehensive data structure for the API
+      const apiData = {
+        // Basic profile information
+        firstName,
+        lastName,
+        title: formData.title,
+        bio: formData.bio,
+        dateOfBirth: formData.dob,
+        gender: formData.gender,
+        nationality: formData.nationality,
+        phone: formData.phone,
+        
+        // Professional Information
+        currentPosition: formData.currentPosition || formData.title,
+        currentCompany: formData.currentCompany,
+        yearsOfExperience: formData.yearsOfExperience || 0,
+        hourlyRate: formData.hourlyRate,
+        currency: formData.currency || 'USD',
+          // Social links as JSON string (backend expects string, not object)
+        socialLinks: JSON.stringify({
+          website: formData.website,
+          github: formData.github,
+          linkedin: formData.linkedin,
+          twitter: formData.twitter,
+          facebook: formData.facebook,
+          instagram: formData.instagram,
+          dribbble: formData.dribbble,
+          behance: formData.behance,
+          medium: formData.medium,
+          youtube: formData.youtube,
+          stackoverflow: formData.stackoverflow,
+          codepen: formData.codepen
+        }),
+        
+        // Skills and Languages with proper structure
+        skills: processSkillsForAPI(formData.skills),
+        languages: processLanguagesForAPI(formData.languages),        // Work preferences - fix mapping for backend compatibility
+        availability: mapAvailabilityForBackend(formData.availability),
+        jobTypes: mapJobTypesForBackend(formData.jobType),
+        remoteWorkAvailable: Boolean(formData.remoteWork),
+        openToRelocation: Boolean(formData.relocation),
+        
+        // Address as object (backend expects object or null)
+        address: {
+          street: formData.location?.address || '',
+          city: formData.location?.city || '',
+          state: formData.location?.state || '',
+          country: formData.location?.country || '',
+          zipCode: formData.location?.zipCode || ''
+        },
+        
+        // Profile visibility
+        profileVisibility: formData.visibilityPreference === 'public' ? 'public' : 
+                          (formData.visibilityPreference === 'connections' ? 'connections_only' : 'private'),
+        
+        // Settings object for user preferences
+        settings: {
+          profilePublic: formData.visibilityPreference === 'public' ? 1 : 0,
+          theme: formData.theme || 'light',
+          fontSize: formData.fontSize || 'medium',
+          animationsEnabled: formData.animationsEnabled ? 1 : 0,
+          notificationsEnabled: formData.notificationsEnabled ? 1 : 0,
+          emailNotifications: formData.emailNotifications ? 1 : 0,
+          pushNotifications: formData.pushNotifications ? 1 : 0,
+          showEmail: formData.showEmail ? 1 : 0,
+          showPhone: formData.showPhone ? 1 : 0,
+          allowSearchEngineIndexing: formData.allowSearchEngineIndexing ? 1 : 0,
+          twoFactorEnabled: formData.twoFactorEnabled ? 1 : 0
+        }
+      };      
+      // Clean up empty values to keep payload clean
+      Object.keys(apiData).forEach(key => {
+        if (apiData[key] === null || apiData[key] === '' || 
+            (Array.isArray(apiData[key]) && apiData[key].length === 0)) {
+          delete apiData[key];
+        }
+      });
+      
+      // Debug the comprehensive data being submitted
+      console.log('🔍 Comprehensive Profile Submission Data:');
+      console.log('Basic Info:', {
+        firstName: apiData.firstName,
+        lastName: apiData.lastName,
+        title: apiData.title,
+        dateOfBirth: apiData.dateOfBirth,
+        gender: apiData.gender,
+        nationality: apiData.nationality
+      });
+      console.log('Professional Info:', {
+        currentPosition: apiData.currentPosition,
+        currentCompany: apiData.currentCompany,
+        yearsOfExperience: apiData.yearsOfExperience,
+        hourlyRate: apiData.hourlyRate
+      });
+      console.log('Address Info:', {
+        address: apiData.address,
+        city: apiData.city,
+        state: apiData.state,
+        country: apiData.country,
+        zipCode: apiData.zipCode
+      });
+      console.log('Skills:', apiData.skills);
+      console.log('Languages:', apiData.languages);
+      console.log('Work Preferences:', {
+        availability: apiData.availability,
+        jobTypes: apiData.jobTypes,
+        remoteWorkAvailable: apiData.remoteWorkAvailable,
+        openToRelocation: apiData.openToRelocation,
+        profileVisibility: apiData.profileVisibility
+      });
+      console.log('Settings:', apiData.settings);
+      console.log('Complete API Data:', apiData);
+      
+      // Call API to update profile
+      const response = await apiService.profile.update(apiData);
+      
+      if (response.data && response.data.success) {
+        console.log('✅ Profile updated successfully:', response.data);        // Success
+        setSuccessMessage('Profile updated successfully! Refreshing page to show latest data...');
+        setShowSuccessMessage(true);
+        setIsDirty(false);
+          // Save current tab and scroll position before reload
+        localStorage.setItem('profileFormActiveTab', activeTab);
+        saveScrollPosition();
+        
+        // Set reloading state and hide success message and reload page after a short delay to preserve section state
+        setTimeout(() => {
+          setIsReloading(true);
+          setShowSuccessMessage(false);
+          // Reload the page to refresh data while preserving the active tab
+          window.location.reload();
+        }, 2000);
+      } else {
+        throw new Error(response.data?.message || 'Failed to update profile');
+      }
     } catch (error) {
-      console.error('Error saving profile:', error);
+      console.error('❌ Error saving profile:', error);
+      
+      let errorMessage = 'Failed to save profile. Please try again.';
+      
+      // More specific error handling
+      if (error.response?.data?.message) {
+        errorMessage = error.response.data.message;
+      } else if (error.message) {
+        errorMessage = error.message;
+      }
+      
       setErrors(prev => ({
         ...prev,
-        general: 'Failed to save profile. Please try again.'
+        general: errorMessage
       }));
     } finally {
       setIsSaving(false);
@@ -497,22 +1233,51 @@ const ProfileForm = () => {
             hidden 
           />
         </div>
-        
-        <div className="profile-image-container">
-          <div 
+          <div className="profile-image-container">          <div 
             className="profile-image" 
             style={{ backgroundImage: formData.profileImage ? `url(${formData.profileImage})` : 'none' }}
           >
-            {!formData.profileImage && (
-              <FaUser className="profile-placeholder" />
+            {/* No placeholder icon - empty when no image */}
+            {/* Add user icon placeholder when no image */}
+            {!formData.profileImage && !isUploading && (
+              <FaUser className="profile-placeholder-icon" />
             )}
+            
+            {/* Upload Progress Overlay */}
+            {isUploading && (
+              <div className="upload-progress-overlay">
+                <div className="upload-progress">
+                  <div className="upload-progress-bar" style={{ width: `${uploadProgress}%` }}></div>
+                </div>
+                <div className="upload-progress-text">
+                  <span>{Math.round(uploadProgress)}% Uploading...</span>
+                </div>
+              </div>
+            )}
+            
+            {/* Change Image Button */}
             <button 
               type="button" 
               className="change-image-btn"
               onClick={() => triggerFileInput(profileImageRef)}
+              disabled={isUploading}
+              title={isUploading ? 'Upload in progress...' : 'Change profile image'}
             >
               <FaCamera />
             </button>
+            
+            {/* Remove Image Button */}
+            {formData.profileImage && !isUploading && (
+              <button 
+                type="button" 
+                className="remove-image-btn"
+                onClick={handleRemoveProfileImage}
+                title="Remove profile image"
+              >
+                <FaTrash />
+              </button>
+            )}
+            
             <input 
               type="file" 
               ref={profileImageRef} 
@@ -521,6 +1286,15 @@ const ProfileForm = () => {
               hidden 
             />
           </div>
+          
+          {/* Profile Image Error */}
+          {errors.profileImage && (
+            <div className="profile-image-error">
+              <FaExclamationTriangle />
+              <span>{errors.profileImage}</span>
+            </div>
+          )}
+          
           <div className="profile-name-title">
             <h2>{formData.name || 'Your Name'}</h2>
             <p>{formData.title || 'Your Title'}</p>
@@ -669,33 +1443,115 @@ const ProfileForm = () => {
                 </div>
               </div>
             </div>
-            
-            <div className="form-group">
-              <label htmlFor="resume">Resume/CV</label>
-              <div className="file-upload-container">
-                <div className="file-upload-info">
-                  {formData.resume ? (
-                    <>
-                      <FaFileAlt className="file-icon" />
-                      <span className="file-name">Resume Uploaded</span>
-                      <a href={formData.resume} target="_blank" rel="noopener noreferrer" className="view-file-link">
-                        View
-                      </a>
-                    </>
-                  ) : (
-                    <>
-                      <FaFileAlt className="file-icon" />
-                      <span className="file-name">No resume uploaded</span>
-                    </>
+              <div className="form-group">
+              <label htmlFor="resume">Resume/CV Management</label>
+              <div className="resume-management-container">
+                {/* Resume Upload Section */}
+                <div className="resume-upload-section">
+                  <div className="upload-area">
+                    <FaCloudUploadAlt className="upload-icon" />
+                    <h4>Upload New Resume</h4>
+                    <p>Drag and drop or click to upload (PDF, DOC, DOCX)</p>
+                    <button 
+                      type="button" 
+                      className="upload-btn"
+                      onClick={() => triggerFileInput(resumeRef)}
+                      disabled={resumeUploading}
+                    >
+                      {resumeUploading ? (
+                        <>
+                          <div className="button-spinner"></div>
+                          Uploading... {resumeUploadProgress}%
+                        </>
+                      ) : (
+                        <>
+                          <FaPlus /> Add Resume
+                        </>
+                      )}
+                    </button>
+                  </div>
+                  
+                  {resumeUploading && (
+                    <div className="upload-progress">
+                      <div className="progress-bar">
+                        <div 
+                          className="progress-fill" 
+                          style={{ width: `${resumeUploadProgress}%` }}
+                        ></div>
+                      </div>
+                      <span className="progress-text">{resumeUploadProgress}% uploaded</span>
+                    </div>
                   )}
                 </div>
-                <button 
-                  type="button" 
-                  className="upload-btn"
-                  onClick={() => triggerFileInput(resumeRef)}
-                >
-                  <FaCloudUploadAlt /> Upload Resume
-                </button>
+
+                {/* Resume List */}
+                {resumes.length > 0 && (
+                  <div className="resume-list">
+                    <h4>Your Resumes ({resumes.length})</h4>
+                    <div className="resume-items">
+                      {resumes.map((resume, index) => (
+                        <div key={resume.id || index} className={`resume-item ${resume.isPrimary ? 'primary' : ''}`}>
+                          <div className="resume-icon">
+                            <FaFileAlt />
+                          </div>
+                          
+                          <div className="resume-details">
+                            <div className="resume-name-row">
+                              <span className="resume-name">{resume.fileName || `Resume ${index + 1}`}</span>
+                              {resume.isPrimary && <span className="primary-badge">Primary</span>}
+                            </div>
+                            <div className="resume-meta">
+                              <span className="file-size">{formatFileSize(resume.fileSize || 0)}</span>
+                              <span className="upload-date">Uploaded {formatUploadDate(resume.uploadDate || new Date())}</span>
+                            </div>
+                          </div>
+                          
+                          <div className="resume-actions">
+                            <a 
+                              href={resume.url} 
+                              target="_blank" 
+                              rel="noopener noreferrer" 
+                              className="action-btn view-btn"
+                              title="View Resume"
+                            >
+                              <FaEye />
+                            </a>
+                            
+                            {!resume.isPrimary && (
+                              <button 
+                                type="button"
+                                className="action-btn primary-btn"
+                                onClick={() => handleSetPrimaryResume(resume.id)}
+                                title="Set as Primary"
+                              >
+                                <FaCheck />
+                              </button>
+                            )}
+                            
+                            <button 
+                              type="button"
+                              className="action-btn delete-btn"
+                              onClick={() => setShowResumeDeleteConfirm(resume)}
+                              title="Delete Resume"
+                            >
+                              <FaTrash />
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Empty State */}
+                {resumes.length === 0 && (
+                  <div className="resume-empty-state">
+                    <FaFileAlt className="empty-icon" />
+                    <h4>No resumes uploaded</h4>
+                    <p>Upload your first resume to get started. You can manage multiple resumes and set one as primary.</p>
+                  </div>
+                )}
+
                 <input 
                   type="file" 
                   ref={resumeRef} 
@@ -704,9 +1560,12 @@ const ProfileForm = () => {
                   hidden 
                 />
               </div>
+              
               <p className="input-help">
-                <FaInfoCircle /> Accepted formats: PDF, DOC, DOCX. Max size: 5MB
+                <FaInfoCircle /> Accepted formats: PDF, DOC, DOCX. Max size: 10MB. You can upload multiple resumes and set one as primary.
               </p>
+              
+              {errors.resume && <p className="error-message">{errors.resume}</p>}
             </div>
           </div>
         </div>
@@ -1064,14 +1923,13 @@ const ProfileForm = () => {
                 <FaInfoCircle /> Press Enter or click Add to add a skill
               </p>
             </div>
-            
-            <div className="skills-container">
+              <div className="skills-container">
               {formData.skills.length === 0 ? (
                 <p className="empty-state">No skills added yet. Add your first skill above.</p>
               ) : (
                 formData.skills.map((skill, index) => (
                   <div key={index} className="skill-tag">
-                    <span>{skill}</span>
+                    <span>{typeof skill === 'string' ? skill : skill.name}</span>
                     <button type="button" onClick={() => removeSkill(skill)}>
                       <FaTimes />
                     </button>
@@ -1287,13 +2145,17 @@ const ProfileForm = () => {
         <div className="form-actions">
           <button type="button" className="cancel-btn" onClick={() => window.history.back()}>
             Cancel
-          </button>
-          <button 
+          </button>          <button 
             type="submit" 
             className="save-btn" 
-            disabled={isSaving || !isDirty}
+            disabled={isSaving || isReloading || !isDirty}
           >
-            {isSaving ? (
+            {isReloading ? (
+              <>
+                <div className="button-spinner"></div>
+                Reloading...
+              </>
+            ) : isSaving ? (
               <>
                 <div className="button-spinner"></div>
                 Saving...
@@ -1613,6 +2475,18 @@ const ProfileForm = () => {
           align-items: flex-end;
           gap: 1.5rem;
         }
+
+        .profile-placeholder-icon {
+          font-size: 3rem;
+          color: var(--gray-400);
+          opacity: 0.7;
+          transition: var(--transition-fast);
+        }
+
+        .profile-image:hover .profile-placeholder-icon {
+          color: var(--gray-500);
+          opacity: 0.9;
+        }
         
         .profile-image {
           width: 120px;
@@ -1650,10 +2524,96 @@ const ProfileForm = () => {
           cursor: pointer;
           transition: var(--transition-fast);
         }
-        
-        .change-image-btn:hover {
+          .change-image-btn:hover:not(:disabled) {
           background-color: var(--primary-dark);
           transform: scale(1.1);
+        }
+        
+        .change-image-btn:disabled {
+          opacity: 0.7;
+          cursor: not-allowed;
+          transform: none;
+        }
+        
+        /* Remove Image Button */
+        .remove-image-btn {
+          position: absolute;
+          bottom: 0;
+          left: 0;
+          width: 32px;
+          height: 32px;
+          border-radius: var(--border-radius-full);
+          background-color: var(--danger-color);
+          color: var(--white);
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          border: 2px solid var(--white);
+          cursor: pointer;
+          transition: var(--transition-fast);
+        }
+        
+        .remove-image-btn:hover {
+          background-color: #dc2626;
+          transform: scale(1.1);
+        }
+        
+        /* Upload Progress Overlay */
+        .upload-progress-overlay {
+          position: absolute;
+          top: 0;
+          left: 0;
+          right: 0;
+          bottom: 0;
+          background: rgba(0, 0, 0, 0.8);
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          justify-content: center;
+          color: var(--white);
+          border-radius: var(--border-radius-full);
+        }
+        
+        .upload-progress {
+          width: 70%;
+          height: 6px;
+          background-color: rgba(255, 255, 255, 0.3);
+          border-radius: 3px;
+          overflow: hidden;
+          margin-bottom: 0.5rem;
+        }
+        
+        .upload-progress-bar {
+          height: 100%;
+          background-color: var(--primary-color);
+          transition: width 0.3s ease;
+        }
+        
+        .upload-progress-text {
+          font-size: 0.75rem;
+          font-weight: 500;
+        }
+        
+        /* Profile Image Error */
+        .profile-image-error {
+          position: absolute;
+          top: -2.5rem;
+          left: 0;
+          right: 0;
+          display: flex;
+          align-items: center;
+          gap: 0.5rem;
+          padding: 0.5rem 0.75rem;
+          background-color: var(--danger-color);
+          color: var(--white);
+          border-radius: var(--border-radius);
+          font-size: 0.75rem;
+          font-weight: 500;
+          box-shadow: var(--shadow-md);
+        }
+        
+        .profile-image-error svg {
+          font-size: 0.875rem;
         }
         
         .profile-name-title {
@@ -1799,7 +2759,8 @@ const ProfileForm = () => {
           border-color: var(--primary-color);
           box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.2);
         }
-                input.error,
+          
+        input.error,
         select.error,
         textarea.error {
           border-color: var(--danger-color);
@@ -1847,6 +2808,16 @@ const ProfileForm = () => {
         .input-with-icon input,
         .input-with-icon select {
           padding-left: 2.25rem;
+        }
+        
+        // .input-with-icon input::placeholder {
+        //   padding-left: 1.25rem;
+        // }
+        .profile-form .input-with-icon input[type="text"],
+        .profile-form .input-with-icon input[type="url"],
+        .profile-form .input-with-icon input[type="date"],
+        .profile-form .input-with-icon select {
+          padding-left: 2.35rem !important;
         }
         
         .input-with-button {
@@ -2268,36 +3239,103 @@ const ProfileForm = () => {
           animation: spin 1s ease-in-out infinite;
           margin-right: 0.25rem;
         }
-        
-        /* Dark Mode Styles */
-        .dark-mode .profile-form-container {
-          background-color: var(--gray-900);
+
+        /* ================================
+          COMPREHENSIVE DARK MODE STYLES
+          ================================ */
+
+        /* Dark Mode Base Variables */
+        body.dark-mode {
+          --profile-dark-bg-primary: #0f172a;
+          --profile-dark-bg-secondary: #1e293b;
+          --profile-dark-bg-tertiary: #334155;
+          --profile-dark-text-primary: #f8fafc;
+          --profile-dark-text-secondary: #cbd5e1;
+          --profile-dark-text-muted: #94a3b8;
+          --profile-dark-border: rgba(148, 163, 184, 0.2);
+          --profile-dark-border-light: rgba(203, 213, 225, 0.1);
+          --profile-dark-accent: #6366f1;
+          --profile-dark-accent-secondary: #8b5cf6;
+          --profile-dark-success: #10b981;
+          --profile-dark-warning: #f59e0b;
+          --profile-dark-error: #ef4444;
+          --profile-dark-info: #3b82f6;
+        }
+
+        /* Profile Form Container - Dark Mode */
+        body.dark-mode .profile-form-container {
+          background: rgba(30, 41, 59, 0.8);
+          backdrop-filter: blur(20px);
+          border: 1px solid var(--profile-dark-border);
+          box-shadow: 
+            0 8px 32px rgba(0, 0, 0, 0.3),
+            0 0 0 1px rgba(255, 255, 255, 0.05) inset;
+          color: var(--profile-dark-text-primary);
+        }
+
+        /* Profile Image Placeholder - Dark Mode */
+        body.dark-mode .profile-placeholder-icon {
+          color: var(--profile-dark-text-muted);
+        }
+
+        body.dark-mode .profile-image:hover .profile-placeholder-icon {
+          color: var(--profile-dark-text-secondary);
+        }
+                
+        /* Header - Dark Mode */
+        body.dark-mode .profile-form-header {
+          border-bottom: 1px solid var(--profile-dark-border);
+        }
+
+        body.dark-mode .profile-form-header h1 {
+          color: var(--profile-dark-text-primary);
+          background: linear-gradient(135deg, #f8fafc 0%, #cbd5e1 100%);
+          -webkit-background-clip: text;
+          -webkit-text-fill-color: transparent;
+          background-clip: text;
         }
         
-        .dark-mode .profile-form-header h1 {
-          color: var(--gray-100);
+        body.dark-mode .back-link {
+          background: rgba(51, 65, 85, 0.4);
+          color: var(--profile-dark-accent);
+          border: 1px solid var(--profile-dark-border);
+          backdrop-filter: blur(10px);
         }
         
-        .dark-mode .back-link {
-          color: var(--gray-400);
+        body.dark-mode .back-link:hover {
+          background: rgba(51, 65, 85, 0.6);
+          color: var(--profile-dark-accent-secondary);
+          box-shadow: 0 0 15px rgba(99, 102, 241, 0.2);
         }
         
-        .dark-mode .back-link:hover {
-          color: var(--primary-light);
+        /* Visibility Toggle - Dark Mode */
+        body.dark-mode .visibility-toggle {
+          background: rgba(51, 65, 85, 0.4);
+          border: 1px solid var(--profile-dark-border);
+          color: var(--profile-dark-text-secondary);
+          backdrop-filter: blur(10px);
         }
         
-        .dark-mode .visibility-toggle {
-          border-color: var(--gray-700);
+        body.dark-mode .visibility-toggle.public {
+          background: linear-gradient(135deg, rgba(16, 185, 129, 0.2) 0%, rgba(5, 150, 105, 0.2) 100%);
+          color: #34d399;
+          border: 1px solid rgba(16, 185, 129, 0.3);
+        }
+
+        body.dark-mode .visibility-toggle.public:hover {
+          background: linear-gradient(135deg, rgba(16, 185, 129, 0.3) 0%, rgba(5, 150, 105, 0.3) 100%);
+          box-shadow: 0 0 15px rgba(16, 185, 129, 0.2);
         }
         
-        .dark-mode .visibility-toggle.public {
-          background-color: rgba(16, 185, 129, 0.2);
-          border-color: rgba(16, 185, 129, 0.4);
+        body.dark-mode .visibility-toggle.private {
+          background: linear-gradient(135deg, rgba(239, 68, 68, 0.2) 0%, rgba(220, 38, 38, 0.2) 100%);
+          color: #f87171;
+          border: 1px solid rgba(239, 68, 68, 0.3);
         }
-        
-        .dark-mode .visibility-toggle.private {
-          background-color: rgba(239, 68, 68, 0.2);
-          border-color: rgba(239, 68, 68, 0.4);
+
+        body.dark-mode .visibility-toggle.private:hover {
+          background: linear-gradient(135deg, rgba(239, 68, 68, 0.3) 0%, rgba(220, 38, 38, 0.3) 100%);
+          box-shadow: 0 0 15px rgba(239, 68, 68, 0.2);
         }
                 .dark-mode .form-section {
           background-color: var(--gray-800);
@@ -2379,56 +3417,470 @@ const ProfileForm = () => {
         .dark-mode .language-item {
           border-color: var(--gray-700);
         }
-        
-        .dark-mode .language-name {
+          .dark-mode .language-name {
           color: var(--gray-200);
         }
-        
-        .dark-mode .checkbox-label {
-          color: var(--gray-300);
+
+        /* ================================
+           COMPREHENSIVE DARK MODE STYLES
+           ================================ */
+
+        /* Tab Navigation - Dark Mode */
+        body.dark-mode .profile-tabs {
+          background: rgba(30, 41, 59, 0.6);
+          border: 1px solid var(--profile-dark-border);
+          border-radius: 12px;
+          padding: 6px;
+          backdrop-filter: blur(10px);
         }
-        
-        .dark-mode .file-upload-container {
-          background-color: var(--gray-700);
-          border-color: var(--gray-600);
+
+        body.dark-mode .tab-btn {
+          background: transparent;
+          color: var(--profile-dark-text-muted);
+          border: none;
+          border-radius: 8px;
+          transition: all 0.3s ease;
+          font-weight: 500;
         }
-        
-        .dark-mode .file-icon {
-          color: var(--gray-400);
+
+        body.dark-mode .tab-btn:hover {
+          background: rgba(51, 65, 85, 0.5);
+          color: var(--profile-dark-text-secondary);
+          transform: translateY(-1px);
         }
-        
-        .dark-mode .file-name {
-          color: var(--gray-300);
+
+        body.dark-mode .tab-btn.active {
+          background: linear-gradient(135deg, var(--profile-dark-accent) 0%, var(--profile-dark-accent-secondary) 100%);
+          color: var(--profile-dark-text-primary);
+          box-shadow: 
+            0 4px 12px rgba(99, 102, 241, 0.3),
+            0 0 0 1px rgba(255, 255, 255, 0.1) inset;
         }
-        
-        .dark-mode .upload-btn {
-          background-color: var(--gray-800);
-          color: var(--gray-300);
-          border-color: var(--gray-600);
+
+        /* Form Content Area - Dark Mode */
+        body.dark-mode .tab-content {
+          background: rgba(30, 41, 59, 0.4);
+          border: 1px solid var(--profile-dark-border);
+          border-radius: 12px;
+          backdrop-filter: blur(15px);
         }
-        
-        .dark-mode .upload-btn:hover {
-          background-color: var(--gray-700);
-          border-color: var(--gray-500);
+
+        body.dark-mode .form-section {
+          background: rgba(51, 65, 85, 0.3);
+          border: 1px solid var(--profile-dark-border-light);
+          border-radius: 8px;
+          backdrop-filter: blur(10px);
         }
-        
-        .dark-mode .form-actions {
-          border-color: var(--gray-700);
+
+        body.dark-mode .section-title {
+          color: var(--profile-dark-text-primary);
+          background: linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%);
+          -webkit-background-clip: text;
+          -webkit-text-fill-color: transparent;
+          background-clip: text;
         }
-        
-        .dark-mode .cancel-btn {
-          background-color: var(--gray-800);
-          color: var(--gray-300);
-          border-color: var(--gray-600);
+
+        body.dark-mode .section-description {
+          color: var(--profile-dark-text-muted);
         }
-        
-        .dark-mode .cancel-btn:hover {
-          background-color: var(--gray-700);
-          border-color: var(--gray-500);
+
+        /* Form Inputs - Dark Mode */
+        body.dark-mode label {
+          color: var(--profile-dark-text-secondary);
+          font-weight: 500;
+        }
+
+        body.dark-mode input[type="text"],
+        body.dark-mode input[type="email"],
+        body.dark-mode input[type="tel"],
+        body.dark-mode input[type="url"],
+        body.dark-mode input[type="date"],
+        body.dark-mode input[type="number"],
+        body.dark-mode select,
+        body.dark-mode textarea {
+          background: rgba(51, 65, 85, 0.6);
+          border: 1px solid var(--profile-dark-border);
+          color: var(--profile-dark-text-primary);
+          backdrop-filter: blur(10px);
+          transition: all 0.3s ease;
+        }
+
+        body.dark-mode input:focus,
+        body.dark-mode select:focus,
+        body.dark-mode textarea:focus {
+          border-color: var(--profile-dark-accent);
+          box-shadow: 
+            0 0 0 3px rgba(99, 102, 241, 0.2),
+            0 4px 12px rgba(99, 102, 241, 0.1);
+          background: rgba(51, 65, 85, 0.8);
+        }
+
+        body.dark-mode input::placeholder,
+        body.dark-mode textarea::placeholder {
+          color: var(--profile-dark-text-muted);
+        }
+
+        body.dark-mode .input-icon {
+          color: var(--profile-dark-text-muted);
+        }
+
+        body.dark-mode .input-help {
+          color: var(--profile-dark-text-muted);
+        }
+
+        /* Location Group - Dark Mode */
+        body.dark-mode .location-group {
+          background: rgba(51, 65, 85, 0.4);
+          border: 1px solid var(--profile-dark-border);
+          backdrop-filter: blur(10px);
+        }
+
+        body.dark-mode .toggle-details-btn {
+          color: var(--profile-dark-accent);
+        }
+
+        body.dark-mode .toggle-details-btn:hover {
+          color: var(--profile-dark-accent-secondary);
+          text-decoration: underline;
+        }
+
+        /* Skill Tags - Dark Mode */
+        body.dark-mode .skill-tag {
+          background: linear-gradient(135deg, rgba(99, 102, 241, 0.2) 0%, rgba(139, 92, 246, 0.2) 100%);
+          color: var(--profile-dark-accent);
+          border: 1px solid rgba(99, 102, 241, 0.3);
+          backdrop-filter: blur(5px);
+        }
+
+        body.dark-mode .skill-tag:hover {
+          background: linear-gradient(135deg, rgba(99, 102, 241, 0.3) 0%, rgba(139, 92, 246, 0.3) 100%);
+          box-shadow: 0 2px 8px rgba(99, 102, 241, 0.2);
+          transform: translateY(-1px);
+        }
+
+        body.dark-mode .skill-tag button {
+          color: var(--profile-dark-accent);
+        }
+
+        body.dark-mode .skill-tag button:hover {
+          color: var(--profile-dark-error);
+        }
+
+        /* Empty State - Dark Mode */
+        body.dark-mode .empty-state {
+          background: rgba(51, 65, 85, 0.3);
+          color: var(--profile-dark-text-muted);
+          border: 1px solid var(--profile-dark-border-light);
+          backdrop-filter: blur(10px);
+        }
+
+        /* Language Table - Dark Mode */
+        body.dark-mode .language-table {
+          border: 1px solid var(--profile-dark-border);
+          background: rgba(30, 41, 59, 0.4);
+          backdrop-filter: blur(10px);
+        }
+
+        body.dark-mode .language-table-header {
+          background: linear-gradient(135deg, rgba(51, 65, 85, 0.8) 0%, rgba(30, 41, 59, 0.8) 100%);
+          color: var(--profile-dark-text-secondary);
+          border-bottom: 1px solid var(--profile-dark-border);
+        }
+
+        body.dark-mode .language-item {
+          border-top: 1px solid var(--profile-dark-border-light);
+          background: rgba(51, 65, 85, 0.2);
+        }
+
+        body.dark-mode .language-item:hover {
+          background: rgba(51, 65, 85, 0.4);
+        }
+
+        body.dark-mode .language-name {
+          color: var(--profile-dark-text-primary);
+        }
+
+        /* Proficiency Badges - Dark Mode */
+        body.dark-mode .proficiency-badge.beginner {
+          background: rgba(239, 68, 68, 0.2);
+          color: #f87171;
+          border: 1px solid rgba(239, 68, 68, 0.3);
+        }
+
+        body.dark-mode .proficiency-badge.intermediate {
+          background: rgba(245, 158, 11, 0.2);
+          color: #fbbf24;
+          border: 1px solid rgba(245, 158, 11, 0.3);
+        }
+
+        body.dark-mode .proficiency-badge.advanced {
+          background: rgba(59, 130, 246, 0.2);
+          color: #60a5fa;
+          border: 1px solid rgba(59, 130, 246, 0.3);
+        }
+
+        body.dark-mode .proficiency-badge.fluent,
+        body.dark-mode .proficiency-badge.native {
+          background: rgba(16, 185, 129, 0.2);
+          color: #34d399;
+          border: 1px solid rgba(16, 185, 129, 0.3);
+        }
+
+        /* Remove Button - Dark Mode */
+        body.dark-mode .remove-btn {
+          background: rgba(239, 68, 68, 0.2);
+          color: var(--profile-dark-error);
+          border: 1px solid rgba(239, 68, 68, 0.3);
+        }
+
+        body.dark-mode .remove-btn:hover {
+          background: rgba(239, 68, 68, 0.3);
+          box-shadow: 0 2px 8px rgba(239, 68, 68, 0.2);
+          transform: translateY(-1px);
+        }
+
+        /* File Upload Components - Dark Mode */
+        body.dark-mode .file-upload-container {
+          background: rgba(51, 65, 85, 0.4);
+          border: 2px dashed var(--profile-dark-border);
+          backdrop-filter: blur(10px);
+          transition: all 0.3s ease;
+        }
+
+        body.dark-mode .file-upload-container:hover {
+          border-color: var(--profile-dark-accent);
+          background: rgba(51, 65, 85, 0.6);
+        }
+
+        body.dark-mode .file-icon {
+          color: var(--profile-dark-text-muted);
+        }
+
+        body.dark-mode .file-name {
+          color: var(--profile-dark-text-secondary);
+        }
+
+        body.dark-mode .upload-btn {
+          background: linear-gradient(135deg, var(--profile-dark-accent) 0%, var(--profile-dark-accent-secondary) 100%);
+          color: var(--profile-dark-text-primary);
+          border: 1px solid rgba(99, 102, 241, 0.3);
+          backdrop-filter: blur(10px);
+        }
+
+        body.dark-mode .upload-btn:hover {
+          background: linear-gradient(135deg, #5b21b6 0%, #7c3aed 100%);
+          box-shadow: 0 4px 12px rgba(99, 102, 241, 0.3);
+          transform: translateY(-1px);
+        }
+
+        /* Progress Bar - Dark Mode */
+        body.dark-mode .upload-progress {
+          background: rgba(51, 65, 85, 0.6);
+          border-radius: 8px;
+          overflow: hidden;
+        }
+
+        body.dark-mode .progress-bar {
+          background: linear-gradient(90deg, var(--profile-dark-accent) 0%, var(--profile-dark-accent-secondary) 100%);
+          box-shadow: 0 0 10px rgba(99, 102, 241, 0.3);
+        }
+
+        body.dark-mode .progress-text {
+          color: var(--profile-dark-text-secondary);
+        }
+
+        /* Resume Management - Dark Mode */
+        body.dark-mode .resume-item {
+          background: rgba(51, 65, 85, 0.4);
+          border: 1px solid var(--profile-dark-border);
+          backdrop-filter: blur(10px);
+        }
+
+        body.dark-mode .resume-item:hover {
+          background: rgba(51, 65, 85, 0.6);
+          box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+        }
+
+        body.dark-mode .resume-title {
+          color: var(--profile-dark-text-primary);
+        }
+
+        body.dark-mode .resume-meta {
+          color: var(--profile-dark-text-muted);
+        }
+
+        /* Checkbox - Dark Mode */
+        body.dark-mode .checkbox-label {
+          color: var(--profile-dark-text-secondary);
+        }
+
+        body.dark-mode input[type="checkbox"] {
+          background: rgba(51, 65, 85, 0.6);
+          border: 1px solid var(--profile-dark-border);
+        }
+
+        body.dark-mode input[type="checkbox"]:checked {
+          background: var(--profile-dark-accent);
+          border-color: var(--profile-dark-accent);
+        }
+
+        /* Form Actions - Dark Mode */
+        body.dark-mode .form-actions {
+          border-top: 1px solid var(--profile-dark-border);
+          background: rgba(30, 41, 59, 0.4);
+          backdrop-filter: blur(15px);
+        }
+
+        body.dark-mode .cancel-btn {
+          background: rgba(51, 65, 85, 0.6);
+          color: var(--profile-dark-text-secondary);
+          border: 1px solid var(--profile-dark-border);
+          backdrop-filter: blur(10px);
+        }
+
+        body.dark-mode .cancel-btn:hover {
+          background: rgba(51, 65, 85, 0.8);
+          border-color: var(--profile-dark-text-muted);
+          color: var(--profile-dark-text-primary);
+          transform: translateY(-1px);
+        }
+
+        body.dark-mode .save-btn {
+          background: linear-gradient(135deg, var(--profile-dark-accent) 0%, var(--profile-dark-accent-secondary) 100%);
+          border: 1px solid rgba(99, 102, 241, 0.3);
+          color: var(--profile-dark-text-primary);
+          box-shadow: 0 4px 12px rgba(99, 102, 241, 0.2);
+        }
+
+        body.dark-mode .save-btn:hover:not(:disabled) {
+          background: linear-gradient(135deg, #5b21b6 0%, #7c3aed 100%);
+          box-shadow: 0 6px 16px rgba(99, 102, 241, 0.3);
+          transform: translateY(-2px);
+        }
+
+        body.dark-mode .save-btn:disabled {
+          background: rgba(51, 65, 85, 0.4);
+          color: var(--profile-dark-text-muted);
+          border-color: var(--profile-dark-border);
+          box-shadow: none;
+        }
+
+        /* Modal Components - Dark Mode */
+        body.dark-mode .modal-overlay {
+          background: rgba(0, 0, 0, 0.7);
+          backdrop-filter: blur(5px);
+        }
+
+        body.dark-mode .modal-content {
+          background: rgba(30, 41, 59, 0.95);
+          border: 1px solid var(--profile-dark-border);
+          backdrop-filter: blur(20px);
+          box-shadow: 
+            0 20px 60px rgba(0, 0, 0, 0.5),
+            0 0 0 1px rgba(255, 255, 255, 0.05) inset;
+        }
+
+        body.dark-mode .modal-header {
+          border-bottom: 1px solid var(--profile-dark-border);
+          color: var(--profile-dark-text-primary);
+        }
+
+        body.dark-mode .modal-title {
+          color: var(--profile-dark-text-primary);
+        }
+
+        body.dark-mode .close-btn {
+          color: var(--profile-dark-text-muted);
+          background: rgba(51, 65, 85, 0.4);
+          border: 1px solid var(--profile-dark-border);
+        }
+
+        body.dark-mode .close-btn:hover {
+          color: var(--profile-dark-error);
+          background: rgba(239, 68, 68, 0.2);
+          border-color: rgba(239, 68, 68, 0.3);
+        }
+
+        /* Success/Error Messages - Dark Mode */
+        body.dark-mode .success-message {
+          background: linear-gradient(135deg, rgba(16, 185, 129, 0.2) 0%, rgba(5, 150, 105, 0.2) 100%);
+          color: var(--profile-dark-success);
+          border: 1px solid rgba(16, 185, 129, 0.3);
+          backdrop-filter: blur(10px);
+        }
+
+        body.dark-mode .error-message {
+          background: linear-gradient(135deg, rgba(239, 68, 68, 0.2) 0%, rgba(220, 38, 38, 0.2) 100%);
+          color: var(--profile-dark-error);
+          border: 1px solid rgba(239, 68, 68, 0.3);
+          backdrop-filter: blur(10px);
+        }
+
+        body.dark-mode .warning-message {
+          background: linear-gradient(135deg, rgba(245, 158, 11, 0.2) 0%, rgba(217, 119, 6, 0.2) 100%);
+          color: var(--profile-dark-warning);
+          border: 1px solid rgba(245, 158, 11, 0.3);
+          backdrop-filter: blur(10px);
+        }
+
+        body.dark-mode .info-message {
+          background: linear-gradient(135deg, rgba(59, 130, 246, 0.2) 0%, rgba(37, 99, 235, 0.2) 100%);
+          color: var(--profile-dark-info);
+          border: 1px solid rgba(59, 130, 246, 0.3);
+          backdrop-filter: blur(10px);
+        }
+
+        /* Loading Spinner - Dark Mode */
+        body.dark-mode .button-spinner {
+          border-color: rgba(248, 250, 252, 0.3);
+          border-top-color: var(--profile-dark-text-primary);
+        }
+
+        body.dark-mode .loading-spinner {
+          border-color: var(--profile-dark-border);
+          border-top-color: var(--profile-dark-accent);
+        }
+
+        /* Input with Button - Dark Mode */
+        body.dark-mode .input-with-button button {
+          background: linear-gradient(135deg, var(--profile-dark-accent) 0%, var(--profile-dark-accent-secondary) 100%);
+          color: var(--profile-dark-text-primary);
+          border: 1px solid rgba(99, 102, 241, 0.3);
+        }
+
+        body.dark-mode .input-with-button button:hover {
+          background: linear-gradient(135deg, #5b21b6 0%, #7c3aed 100%);
+          box-shadow: 0 2px 8px rgba(99, 102, 241, 0.3);
+        }
+
+        /* Cover Image - Dark Mode */
+        body.dark-mode .profile-cover {
+          background: linear-gradient(135deg, var(--profile-dark-bg-secondary) 0%, var(--profile-dark-bg-tertiary) 100%);
+          border: 1px solid var(--profile-dark-border);
+        }
+
+        /* Profile Image Container - Dark Mode */
+        body.dark-mode .profile-image {
+          border: 3px solid var(--profile-dark-bg-primary);
+          box-shadow: 
+            0 8px 24px rgba(0, 0, 0, 0.3),
+            0 0 0 1px rgba(255, 255, 255, 0.1) inset;
+        }
+
+        body.dark-mode .profile-image-overlay {
+          background: rgba(0, 0, 0, 0.7);
+          backdrop-filter: blur(2px);
+        }
+
+        body.dark-mode .image-upload-content {
+          color: var(--profile-dark-text-primary);
         }
         
         /* Responsive Styles */
         @media (max-width: 768px) {
+          .profile-placeholder-icon {
+            font-size: 2.5rem;
+          }
           .profile-form-container {
             padding: 1rem;
           }
@@ -2483,14 +3935,294 @@ const ProfileForm = () => {
             flex-direction: column-reverse;
             gap: 0.5rem;
           }
-          
-          .cancel-btn,
+            .cancel-btn,
           .save-btn {
             width: 100%;
             justify-content: center;
           }
         }
+
+        /* Resume Management Styles */
+        .resume-section {
+          background: #fff;
+          border-radius: 12px;
+          padding: 2rem;
+          box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+
+        .resume-upload-area {
+          border: 2px dashed #e1e5e9;
+          border-radius: 8px;
+          padding: 2rem;
+          text-align: center;
+          transition: all 0.3s ease;
+          cursor: pointer;
+          background: #fafbfc;
+        }
+
+        .resume-upload-area:hover {
+          border-color: #0066cc;
+          background: #f0f7ff;
+        }
+
+        .resume-upload-area.drag-over {
+          border-color: #0066cc;
+          background: #e6f3ff;
+        }
+
+        .upload-icon {
+          font-size: 2rem;
+          color: #6c757d;
+          margin-bottom: 1rem;
+        }
+
+        .upload-text {
+          color: #495057;
+          margin-bottom: 0.5rem;
+        }
+
+        .upload-subtext {
+          color: #6c757d;
+          font-size: 0.875rem;
+        }
+
+        .resume-list {
+          margin-top: 2rem;
+        }
+
+        .resume-item {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          padding: 1rem;
+          border: 1px solid #e1e5e9;
+          border-radius: 8px;
+          margin-bottom: 1rem;
+          background: #fff;
+        }
+
+        .resume-item.primary {
+          border-color: #0066cc;
+          background: #f0f7ff;
+        }
+
+        .resume-info {
+          display: flex;
+          align-items: center;
+          flex: 1;
+        }
+
+        .resume-icon {
+          color: #dc3545;
+          margin-right: 1rem;
+          font-size: 1.5rem;
+        }
+
+        .resume-details h4 {
+          margin: 0 0 0.25rem 0;
+          color: #212529;
+          font-size: 1rem;
+        }
+
+        .resume-meta {
+          color: #6c757d;
+          font-size: 0.875rem;
+        }
+
+        .primary-badge {
+          background: #0066cc;
+          color: white;
+          padding: 0.25rem 0.5rem;
+          border-radius: 4px;
+          font-size: 0.75rem;
+          margin-left: 1rem;
+        }
+
+        .resume-actions {
+          display: flex;
+          gap: 0.5rem;
+        }
+
+        .resume-action-btn {
+          padding: 0.5rem;
+          border: none;
+          border-radius: 4px;
+          cursor: pointer;
+          transition: all 0.2s ease;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+        }
+
+        .set-primary-btn {
+          background: #f8f9fa;
+          color: #0066cc;
+          border: 1px solid #0066cc;
+        }
+
+        .set-primary-btn:hover {
+          background: #0066cc;
+          color: white;
+        }
+
+        .delete-resume-btn {
+          background: #f8f9fa;
+          color: #dc3545;
+          border: 1px solid #dc3545;
+        }
+
+        .delete-resume-btn:hover {
+          background: #dc3545;
+          color: white;
+        }
+
+        .upload-progress {
+          margin-top: 1rem;
+          padding: 1rem;
+          background: #f8f9fa;
+          border-radius: 8px;
+        }
+
+        .progress-bar {
+          width: 100%;
+          height: 8px;
+          background: #e9ecef;
+          border-radius: 4px;
+          overflow: hidden;
+          margin-top: 0.5rem;
+        }
+
+        .progress-fill {
+          height: 100%;
+          background: #0066cc;
+          transition: width 0.3s ease;
+        }
+
+        .empty-resume-state {
+          text-align: center;
+          padding: 2rem;
+          color: #6c757d;
+        }
+
+        .empty-resume-state .empty-icon {
+          font-size: 3rem;
+          margin-bottom: 1rem;
+          opacity: 0.5;
+        }
+
+        /* Delete Confirmation Modal */
+        .modal-overlay {
+          position: fixed;
+          top: 0;
+          left: 0;
+          right: 0;
+          bottom: 0;
+          background: rgba(0, 0, 0, 0.5);
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          z-index: 1000;
+        }
+
+        .modal-content {
+          background: white;
+          border-radius: 12px;
+          padding: 2rem;
+          max-width: 400px;
+          width: 90%;
+          box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
+        }
+
+        .modal-header {
+          display: flex;
+          align-items: center;
+          margin-bottom: 1rem;
+        }
+
+        .modal-icon {
+          color: #dc3545;
+          font-size: 1.5rem;
+          margin-right: 1rem;
+        }
+
+        .modal-title {
+          margin: 0;
+          color: #212529;
+          font-size: 1.25rem;
+        }
+
+        .modal-body {
+          margin-bottom: 2rem;
+          color: #495057;
+          line-height: 1.5;
+        }
+
+        .modal-actions {
+          display: flex;
+          gap: 1rem;
+          justify-content: flex-end;
+        }
+
+        .modal-btn {
+          padding: 0.75rem 1.5rem;
+          border: none;
+          border-radius: 6px;
+          font-weight: 500;
+          cursor: pointer;
+          transition: all 0.2s ease;
+        }
+
+        .modal-btn-cancel {
+          background: #f8f9fa;
+          color: #495057;
+          border: 1px solid #dee2e6;
+        }
+
+        .modal-btn-cancel:hover {
+          background: #e9ecef;
+        }
+
+        .modal-btn-delete {
+          background: #dc3545;
+          color: white;
+        }
+
+        .modal-btn-delete:hover {
+          background: #c82333;
+        }
       `}</style>
+
+      {/* Delete Resume Confirmation Modal */}
+      {showResumeDeleteConfirm && (
+        <div className="modal-overlay" onClick={() => setShowResumeDeleteConfirm(null)}>
+          <div className="modal-content" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <FaExclamationTriangle className="modal-icon" />
+              <h3 className="modal-title">Delete Resume</h3>
+            </div>
+            <div className="modal-body">
+              <p>Are you sure you want to delete <strong>{showResumeDeleteConfirm.originalName}</strong>?</p>
+              <p>This action cannot be undone.</p>
+            </div>
+            <div className="modal-actions">
+              <button 
+                type="button"
+                className="modal-btn modal-btn-cancel"
+                onClick={() => setShowResumeDeleteConfirm(null)}
+              >
+                Cancel
+              </button>
+              <button 
+                type="button"
+                className="modal-btn modal-btn-delete"
+                onClick={() => handleDeleteResume(showResumeDeleteConfirm.id)}
+              >
+                Delete Resume
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

@@ -22,8 +22,9 @@ import {
 } from 'react-icons/fa';
 import { formatDate } from '../../utils/formatters';
 import { truncateText } from '../../utils/formatters';
+import apiService from '../../services/api/apiService';
 
-const EducationForm = ({ editMode = false }) => {
+const EducationForm = ({ editMode = false, readOnly = false }) => {
   const navigate = useNavigate();
   const { id } = useParams();
   
@@ -53,47 +54,57 @@ const EducationForm = ({ editMode = false }) => {
   const [courseInput, setCourseInput] = useState('');
   const [showSuccessMessage, setShowSuccessMessage] = useState(false);
   const [showErrorMessage, setShowErrorMessage] = useState(false);
-  const [errorMessage, setErrorMessage] = useState('');
-  
-  // Fetch education data if in edit mode
+  const [errorMessage, setErrorMessage] = useState('');    // Fetch education data if in edit mode
   useEffect(() => {
     if (editMode && id) {
       setIsLoading(true);
       
-      // Simulate API call to fetch education data
-      setTimeout(() => {
-        // Sample data for edit mode
-        const educationData = {
-          degree: 'Bachelor of Science',
-          fieldOfStudy: 'Computer Science',
-          institution: 'University of Nairobi',
-          location: 'Nairobi, Kenya',
-          startDate: '2016-09-01',
-          endDate: '2020-05-30',
-          current: false,
-          description: 'Studied computer science with a focus on software engineering and artificial intelligence. Participated in various coding competitions and hackathons.',
-          achievements: [
-            'Graduated with First Class Honors',
-            'Dean\'s List for 6 consecutive semesters',
-            'Best Final Year Project Award'
-          ],
-          courses: [
-            'Data Structures and Algorithms',
-            'Database Management Systems',
-            'Artificial Intelligence',
-            'Software Engineering',
-            'Computer Networks'
-          ],
-          gpa: '3.8',
-          maxGpa: '4.0',
-          certificateUrl: '/assets/certificate.pdf',
-          institutionLogo: '/assets/university-logo.png',
-          institutionWebsite: 'https://uonbi.ac.ke'
-        };
-        
-        setFormData(educationData);
-        setIsLoading(false);
-      }, 1000);
+      const fetchEducationData = async () => {
+        try {
+          console.log('📚 Fetching education data for ID:', id);
+          const response = await apiService.education.getById(id);
+          console.log('✅ API Response:', response.data);
+          
+          // Extract education data from the nested response structure
+          const educationData = response.data.data.education;
+          
+          if (educationData) {
+            // Map API response to form format
+            const mappedData = {
+              degree: educationData.degree || '',
+              fieldOfStudy: educationData.fieldOfStudy || '',
+              institution: educationData.institution || '',
+              location: educationData.location || '',
+              startDate: educationData.startDate || '',
+              endDate: educationData.endDate || '',
+              current: educationData.current === 1 || educationData.current === true || false,
+              description: educationData.description || '',
+              achievements: educationData.achievements || [],
+              courses: educationData.courses || [],
+              gpa: educationData.gpa || '',
+              maxGpa: educationData.maxGpa || '4.0',
+              certificateUrl: educationData.certificateUrl || '',
+              institutionLogo: educationData.institutionLogo || '',
+              institutionWebsite: educationData.institutionWebsite || ''
+            };
+            
+            console.log('✅ Education data loaded:', mappedData);
+            setFormData(mappedData);
+          } else {
+            console.error('❌ Education record not found for ID:', id);
+            setErrorMessage('Education record not found.');
+            setShowErrorMessage(true);
+          }
+        } catch (error) {
+          console.error('❌ Error fetching education data:', error);
+          setErrorMessage('Failed to load education data. Please try again.');
+          setShowErrorMessage(true);
+        } finally {
+          setIsLoading(false);
+        }
+      };
+      
+      fetchEducationData();
     }
   }, [editMode, id]);
   
@@ -208,8 +219,7 @@ const EducationForm = ({ editMode = false }) => {
       courses: prev.courses.filter((_, i) => i !== index)
     }));
   };
-  
-  const handleSubmit = async (e) => {
+    const handleSubmit = async (e) => {
     e.preventDefault();
     
     if (!validateForm()) {
@@ -226,24 +236,72 @@ const EducationForm = ({ editMode = false }) => {
     setIsSaving(true);
     
     try {
-      // Simulate API call
-      await new Promise(resolve => setTimeout(resolve, 1500));
+      // Map form data to API format
+      const apiData = {
+        institution: formData.institution,
+        degree: formData.degree,
+        fieldOfStudy: formData.fieldOfStudy,
+        location: formData.location,
+        startDate: formData.startDate,
+        endDate: formData.endDate,
+        isCurrent: formData.current, // Map 'current' to 'isCurrent'
+        grade: formData.gpa, // Map 'gpa' to 'grade'
+        maxGpa: formData.maxGpa,
+        description: formData.description,
+        achievements: formData.achievements,
+        courses: formData.courses,
+        certificateUrl: formData.certificateUrl,
+        institutionLogo: formData.institutionLogo,
+      };
+
+      console.log('📚 Submitting education data:', apiData);
       
-      // Show success message
+      let response;
+      if (editMode && id) {
+        // Update existing education record
+        response = await apiService.education.update(id, apiData);
+        console.log('✅ Education updated successfully:', response.data);
+      } else {
+        // Create new education record
+        response = await apiService.education.create(apiData);
+        console.log('✅ Education created successfully:', response.data);
+      }      // Show success message
       setShowSuccessMessage(true);
       setIsDirty(false);
       
-      // Hide success message after 3 seconds
+      // Hide success message after 3 seconds and navigate to education list
       setTimeout(() => {
         setShowSuccessMessage(false);
-        
-        // Navigate back to profile page
-        navigate('/profile');
+        navigate('/education');
       }, 3000);
+      
     } catch (error) {
-      console.error('Error saving education:', error);
+      console.error('❌ Error saving education:', error);
+      
+      // Handle different types of errors
+      let errorMsg = 'Failed to save education. Please try again.';
+      
+      if (error.response) {
+        // Server responded with error status
+        console.error('Server error details:', error.response.data);
+        
+        if (error.response.status === 401) {
+          errorMsg = 'Authentication failed. Please log in again.';
+        } else if (error.response.status === 400) {
+          errorMsg = error.response.data?.message || 'Invalid data provided. Please check your inputs.';
+        } else if (error.response.status >= 500) {
+          errorMsg = 'Server error. Please try again later.';
+        } else {
+          errorMsg = error.response.data?.message || errorMsg;
+        }
+      } else if (error.request) {
+        // Network error
+        console.error('Network error:', error.request);
+        errorMsg = 'Network error. Please check your internet connection.';
+      }
+      
       setShowErrorMessage(true);
-      setErrorMessage('Failed to save education. Please try again.');
+      setErrorMessage(errorMsg);
       
       // Hide error message after 5 seconds
       setTimeout(() => {
@@ -265,12 +323,11 @@ const EducationForm = ({ editMode = false }) => {
   
   return (
     <div className="education-form-container">
-      <div className="education-form-header">
-        <div className="header-left">
-          <Link to="/profile" className="back-link">
-            <FaArrowLeft /> Back to Profile
+      <div className="education-form-header">        <div className="header-left">
+          <Link to="/education" className="back-link">
+            <FaArrowLeft /> Back to Education
           </Link>
-          <h1>{editMode ? 'Edit Education' : 'Add New Education'}</h1>
+          <h1>{readOnly ? 'View Education Details' : (editMode ? 'Edit Education' : 'Add New Education')}</h1>
         </div>
       </div>
       
@@ -317,8 +374,7 @@ const EducationForm = ({ editMode = false }) => {
                 Degree / Certificate <span className="required">*</span>
               </label>
               <div className="input-with-icon">
-                <FaGraduationCap className="input-icon" />
-                <input
+                <FaGraduationCap className="input-icon" />                <input
                   type="text"
                   id="degree"
                   name="degree"
@@ -326,6 +382,7 @@ const EducationForm = ({ editMode = false }) => {
                   onChange={handleChange}
                   className={errors.degree ? 'error' : ''}
                   placeholder="e.g. Bachelor of Science, Master's Degree"
+                  disabled={readOnly}
                   required
                 />
               </div>
@@ -337,8 +394,7 @@ const EducationForm = ({ editMode = false }) => {
                 Field of Study <span className="required">*</span>
               </label>
               <div className="input-with-icon">
-                <FaBook className="input-icon" />
-                <input
+                <FaBook className="input-icon" />                <input
                   type="text"
                   id="fieldOfStudy"
                   name="fieldOfStudy"
@@ -346,6 +402,7 @@ const EducationForm = ({ editMode = false }) => {
                   onChange={handleChange}
                   className={errors.fieldOfStudy ? 'error' : ''}
                   placeholder="e.g. Computer Science, Business Administration"
+                  disabled={readOnly}
                   required
                 />
               </div>
@@ -359,8 +416,7 @@ const EducationForm = ({ editMode = false }) => {
                 Institution <span className="required">*</span>
               </label>
               <div className="input-with-icon">
-                <FaUniversity className="input-icon" />
-                <input
+                <FaUniversity className="input-icon" />                <input
                   type="text"
                   id="institution"
                   name="institution"
@@ -368,6 +424,7 @@ const EducationForm = ({ editMode = false }) => {
                   onChange={handleChange}
                   className={errors.institution ? 'error' : ''}
                   placeholder="e.g. University of Nairobi, Harvard University"
+                  disabled={readOnly}
                   required
                 />
               </div>
@@ -377,14 +434,14 @@ const EducationForm = ({ editMode = false }) => {
             <div className="form-group">
               <label htmlFor="location">Location</label>
               <div className="input-with-icon">
-                <FaMapMarkerAlt className="input-icon" />
-                <input
+                <FaMapMarkerAlt className="input-icon" />                <input
                   type="text"
                   id="location"
                   name="location"
                   value={formData.location}
                   onChange={handleChange}
                   placeholder="e.g. Nairobi, Kenya"
+                  disabled={readOnly}
                 />
               </div>
             </div>
@@ -396,14 +453,14 @@ const EducationForm = ({ editMode = false }) => {
                 Start Date <span className="required">*</span>
               </label>
               <div className="input-with-icon">
-                <FaCalendarAlt className="input-icon" />
-                <input
+                <FaCalendarAlt className="input-icon" />                <input
                   type="date"
                   id="startDate"
                   name="startDate"
                   value={formData.startDate}
                   onChange={handleChange}
                   className={errors.startDate ? 'error' : ''}
+                  disabled={readOnly}
                   required
                 />
               </div>
@@ -415,15 +472,14 @@ const EducationForm = ({ editMode = false }) => {
                 End Date {!formData.current && <span className="required">*</span>}
               </label>
               <div className="input-with-icon">
-                <FaCalendarAlt className="input-icon" />
-                <input
+                <FaCalendarAlt className="input-icon" />                <input
                   type="date"
                   id="endDate"
                   name="endDate"
                   value={formData.endDate}
                   onChange={handleChange}
                   className={errors.endDate ? 'error' : ''}
-                  disabled={formData.current}
+                  disabled={formData.current || readOnly}
                   required={!formData.current}
                 />
               </div>
@@ -434,12 +490,12 @@ const EducationForm = ({ editMode = false }) => {
                     <div className="form-group toggle-group">
             <label className="toggle-label">
               <span>I am currently studying here</span>
-              <div className="toggle-switch">
-                <input
+              <div className="toggle-switch">                <input
                   type="checkbox"
                   name="current"
                   checked={formData.current}
                   onChange={handleChange}
+                  disabled={readOnly}
                 />
                 <span className="toggle-slider"></span>
               </div>
@@ -448,8 +504,7 @@ const EducationForm = ({ editMode = false }) => {
           
           <div className="form-row">
             <div className="form-group">
-              <label htmlFor="gpa">GPA / Grade</label>
-              <input
+              <label htmlFor="gpa">GPA / Grade</label>              <input
                 type="text"
                 id="gpa"
                 name="gpa"
@@ -457,13 +512,13 @@ const EducationForm = ({ editMode = false }) => {
                 onChange={handleChange}
                 className={errors.gpa ? 'error' : ''}
                 placeholder="e.g. 3.8"
+                disabled={readOnly}
               />
               {errors.gpa && <div className="error-message">{errors.gpa}</div>}
             </div>
             
             <div className="form-group">
-              <label htmlFor="maxGpa">Max GPA / Grade Scale</label>
-              <input
+              <label htmlFor="maxGpa">Max GPA / Grade Scale</label>              <input
                 type="text"
                 id="maxGpa"
                 name="maxGpa"
@@ -471,6 +526,7 @@ const EducationForm = ({ editMode = false }) => {
                 onChange={handleChange}
                 className={errors.maxGpa ? 'error' : ''}
                 placeholder="e.g. 4.0"
+                disabled={readOnly}
               />
               {errors.maxGpa && <div className="error-message">{errors.maxGpa}</div>}
               <p className="input-help">The maximum possible GPA or grade in your institution's scale</p>
@@ -488,8 +544,7 @@ const EducationForm = ({ editMode = false }) => {
             <div className="form-group">
               <label htmlFor="institutionWebsite">Institution Website</label>
               <div className="input-with-icon">
-                <FaLink className="input-icon" />
-                <input
+                <FaLink className="input-icon" />                <input
                   type="url"
                   id="institutionWebsite"
                   name="institutionWebsite"
@@ -497,6 +552,7 @@ const EducationForm = ({ editMode = false }) => {
                   onChange={handleChange}
                   className={errors.institutionWebsite ? 'error' : ''}
                   placeholder="e.g. https://university.edu"
+                  disabled={readOnly}
                 />
               </div>
               {errors.institutionWebsite && <div className="error-message">{errors.institutionWebsite}</div>}
@@ -545,14 +601,14 @@ const EducationForm = ({ editMode = false }) => {
           <div className="form-group">
             <label htmlFor="certificateUrl">Certificate / Diploma URL</label>
             <div className="input-with-icon">
-              <FaCertificate className="input-icon" />
-              <input
+              <FaCertificate className="input-icon" />              <input
                 type="url"
                 id="certificateUrl"
                 name="certificateUrl"
                 value={formData.certificateUrl}
                 onChange={handleChange}
                 placeholder="e.g. https://example.com/certificate.pdf"
+                disabled={readOnly}
               />
             </div>
             <p className="input-help">Link to your diploma or certificate if available online</p>
@@ -566,14 +622,14 @@ const EducationForm = ({ editMode = false }) => {
           </p>
           
           <div className="form-group">
-            <label htmlFor="description">Description</label>
-            <textarea
+            <label htmlFor="description">Description</label>            <textarea
               id="description"
               name="description"
               value={formData.description}
               onChange={handleChange}
               rows="5"
               placeholder="Describe your educational experience, focus areas, thesis, etc..."
+              disabled={readOnly}
             ></textarea>
             <p className="input-help">
               <FaInfoCircle /> Highlight your academic focus, research, and key learning outcomes.
@@ -582,13 +638,13 @@ const EducationForm = ({ editMode = false }) => {
           
           <div className="form-group">
             <label htmlFor="achievementInput">Academic Achievements</label>
-            <div className="input-with-button">
-              <input
+            <div className="input-with-button">              <input
                 type="text"
                 id="achievementInput"
                 value={achievementInput}
                 onChange={(e) => setAchievementInput(e.target.value)}
                 placeholder="e.g. Dean's List, Graduated with Honors"
+                disabled={readOnly}
                 onKeyPress={(e) => {
                   if (e.key === 'Enter') {
                     e.preventDefault();
@@ -596,7 +652,7 @@ const EducationForm = ({ editMode = false }) => {
                   }
                 }}
               />
-              <button type="button" onClick={addAchievement}>Add</button>
+              <button type="button" onClick={addAchievement} disabled={readOnly}>Add</button>
             </div>
             <p className="input-help">Press Enter or click Add to add an achievement</p>
             
@@ -615,12 +671,12 @@ const EducationForm = ({ editMode = false }) => {
                       exit={{ opacity: 0, x: -20 }}
                       className="bullet-item"
                     >
-                      <span>{achievement}</span>
-                      <button 
+                      <span>{achievement}</span>                      <button 
                         type="button" 
                         className="remove-btn" 
                         onClick={() => removeAchievement(index)}
                         aria-label="Remove achievement"
+                        disabled={readOnly}
                       >
                         <FaTimes />
                       </button>
@@ -633,13 +689,13 @@ const EducationForm = ({ editMode = false }) => {
           
           <div className="form-group">
             <label htmlFor="courseInput">Relevant Courses</label>
-            <div className="input-with-button">
-              <input
+            <div className="input-with-button">              <input
                 type="text"
                 id="courseInput"
                 value={courseInput}
                 onChange={(e) => setCourseInput(e.target.value)}
                 placeholder="e.g. Data Structures and Algorithms"
+                disabled={readOnly}
                 onKeyPress={(e) => {
                   if (e.key === 'Enter') {
                     e.preventDefault();
@@ -647,7 +703,7 @@ const EducationForm = ({ editMode = false }) => {
                   }
                 }}
               />
-              <button type="button" onClick={addCourse}>Add</button>
+              <button type="button" onClick={addCourse} disabled={readOnly}>Add</button>
             </div>
             <p className="input-help">Press Enter or click Add to add a course</p>
             
@@ -666,11 +722,11 @@ const EducationForm = ({ editMode = false }) => {
                       exit={{ opacity: 0, x: -20 }}
                       className="bullet-item"
                     >
-                      <span>{course}</span>
-                      <button 
+                      <span>{course}</span>                      <button 
                         type="button" 
                         className="remove-btn" 
                         onClick={() => removeCourse(index)}
+                        disabled={readOnly}
                         aria-label="Remove course"
                       >
                         <FaTimes />
@@ -682,40 +738,41 @@ const EducationForm = ({ editMode = false }) => {
             </div>
           </div>
         </div>
-        
-        <div className="form-actions">
+          <div className="form-actions">
           <button 
             type="button" 
             className="cancel-btn" 
             onClick={() => {
               if (isDirty) {
                 if (window.confirm('You have unsaved changes. Are you sure you want to leave?')) {
-                  navigate('/profile');
+                  navigate('/education');
                 }
               } else {
-                navigate('/profile');
+                navigate('/education');
               }
             }}
           >
-            Cancel
+            {readOnly ? 'Back' : 'Cancel'}
           </button>
           
-          <button 
-            type="submit" 
-            className="save-btn" 
-            disabled={isSaving}
-          >
-            {isSaving ? (
-              <>
-                <div className="button-spinner"></div>
-                Saving...
-              </>
-            ) : (
-              <>
-                <FaSave /> {editMode ? 'Update Education' : 'Save Education'}
-              </>
-            )}
-          </button>
+          {!readOnly && (
+            <button 
+              type="submit" 
+              className="save-btn" 
+              disabled={isSaving}
+            >
+              {isSaving ? (
+                <>
+                  <div className="button-spinner"></div>
+                  Saving...
+                </>
+              ) : (
+                <>
+                  <FaSave /> {editMode ? 'Update Education' : 'Save Education'}
+                </>
+              )}
+            </button>
+          )}
         </div>
       </form>
       
@@ -800,12 +857,14 @@ const EducationForm = ({ editMode = false }) => {
         }
         
         /* Global Styles */
-        * {
+        .education-form-container *,
+        .education-form-container *::before,
+        .education-form-container *::after {
           box-sizing: border-box;
           margin: 0;
           padding: 0;
         }
-        
+                
         /* Loading Screen */
         .loading-screen {
           display: flex;
@@ -983,11 +1042,11 @@ const EducationForm = ({ editMode = false }) => {
           color: var(--danger-color);
         }
         
-        input[type="text"],
-        input[type="url"],
-        input[type="date"],
-        select,
-        textarea {
+        .education-form-container input[type="text"],
+        .education-form-container input[type="url"],
+        .education-form-container input[type="date"],
+        .education-form-container select,
+        .education-form-container textarea {
           width: 100%;
           padding: 0.625rem 0.75rem;
           border: 1px solid var(--gray-300);
@@ -997,17 +1056,18 @@ const EducationForm = ({ editMode = false }) => {
           background-color: var(--white);
           transition: var(--transition-fast);
         }
+
         
-        input:focus,
-        select:focus,
-        textarea:focus {
+        .education-form-container input:focus,
+        .education-form-container select:focus,
+        .education-form-container textarea:focus {
           outline: none;
           border-color: var(--primary-color);
           box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.2);
         }
-        
-        input::placeholder,
-        textarea::placeholder {
+                
+        .education-form-container input::placeholder,
+        .education-form-container textarea::placeholder {
           color: var(--gray-400);
         }
         
@@ -1054,13 +1114,21 @@ const EducationForm = ({ editMode = false }) => {
           transform: translateY(-50%);
           color: var(--gray-500);
           font-size: 0.875rem;
+          z-index: 1;
         }
         
         .input-with-icon input,
         .input-with-icon select {
-          padding-left: 2.25rem;
+          padding-left: 2.35rem !important;
         }
-        
+
+        .education-form .input-with-icon input[type="text"],
+        .education-form .input-with-icon input[type="url"],
+        .education-form .input-with-icon input[type="date"],
+        .education-form .input-with-icon select {
+          padding-left: 2.35rem !important;
+        }
+                
         .input-with-button {
           display: flex;
           gap: 0.5rem;
@@ -1333,129 +1401,165 @@ const EducationForm = ({ editMode = false }) => {
           border-top-color: var(--white);
           animation: spin 1s ease-in-out infinite;
           margin-right: 0.25rem;
-        }
+        }        /* Dark Mode Support */
+        @media (prefers-color-scheme: dark) {
+          :root {
+            --white: #1f2937;
+            --gray-50: #111827;
+            --gray-100: #1f2937;
+            --gray-200: #374151;
+            --gray-300: #4b5563;
+            --gray-400: #6b7280;
+            --gray-500: #9ca3af;
+            --gray-600: #d1d5db;
+            --gray-700: #e5e7eb;
+            --gray-800: #f3f4f6;
+            --gray-900: #f9fafb;
+          }
 
-                /* Dark Mode Styles */
-        .dark-mode .education-form-container {
-          background-color: var(--gray-900);
-        }
-        
-        .dark-mode .education-form-header h1 {
-          color: var(--gray-100);
-        }
-        
-        .dark-mode .back-link {
-          color: var(--gray-400);
-        }
-        
-        .dark-mode .back-link:hover {
-          color: var(--primary-light);
-        }
-        
-        .dark-mode .form-section {
-          background-color: var(--gray-800);
-          border-color: var(--gray-700);
-        }
-        
-        .dark-mode .section-title {
-          color: var(--gray-100);
-        }
-        
-        .dark-mode .section-description {
-          color: var(--gray-400);
-        }
-        
-        .dark-mode label {
-          color: var(--gray-300);
-        }
-        
-        .dark-mode input[type="text"],
-        .dark-mode input[type="url"],
-        .dark-mode input[type="date"],
-        .dark-mode select,
-        .dark-mode textarea {
-          background-color: var(--gray-700);
-          border-color: var(--gray-600);
-          color: var(--gray-200);
-        }
-        
-        .dark-mode input:focus,
-        .dark-mode select:focus,
-        .dark-mode textarea:focus {
-          border-color: var(--primary-light);
-          box-shadow: 0 0 0 3px rgba(129, 140, 248, 0.2);
-        }
-        
-        .dark-mode .input-icon {
-          color: var(--gray-400);
-        }
-        
-        .dark-mode .input-help {
-          color: var(--gray-400);
-        }
-        
-        .dark-mode .toggle-slider {
-          background-color: var(--gray-600);
-        }
-        
-        .dark-mode .toggle-slider:before {
-          background-color: var(--gray-300);
-        }
-        
-        .dark-mode input:checked + .toggle-slider {
-          background-color: var(--primary-light);
-        }
-        
-        .dark-mode .file-upload-container {
-          background-color: var(--gray-700);
-          border-color: var(--gray-600);
-        }
-        
-        .dark-mode .file-icon {
-          color: var(--gray-400);
-        }
-        
-        .dark-mode .file-name {
-          color: var(--gray-300);
-        }
-        
-        .dark-mode .upload-btn {
-          background-color: var(--gray-800);
-          color: var(--gray-300);
-          border-color: var(--gray-600);
-        }
-        
-        .dark-mode .upload-btn:hover {
-          background-color: var(--gray-700);
-          border-color: var(--gray-500);
-        }
-        
-        .dark-mode .bullet-item {
-          border-color: var(--gray-700);
-        }
-        
-        .dark-mode .bullet-item span {
-          color: var(--gray-300);
-        }
-        
-        .dark-mode .empty-state {
-          background-color: var(--gray-700);
-          color: var(--gray-400);
-        }
-        
-        .dark-mode .form-actions {
-          border-color: var(--gray-700);
-        }
-        
-        .dark-mode .cancel-btn {
-          background-color: var(--gray-800);
-          color: var(--gray-300);
-          border-color: var(--gray-600);
-        }
-        
-        .dark-mode .cancel-btn:hover {
-          background-color: var(--gray-700);
-          border-color: var(--gray-500);
+          .education-form-container {
+            background-color: #1f2937;
+            color: #f9fafb;
+          }
+          
+          .education-form-header h1 {
+            color: #f9fafb;
+          }
+          
+          .back-link {
+            color: #9ca3af;
+          }
+          
+          .back-link:hover {
+            color: #818cf8;
+          }
+          
+          .form-section {
+            background-color: #374151;
+            border-color: #4b5563;
+          }
+          
+          .section-title {
+            color: #f9fafb;
+          }
+          
+          .section-description {
+            color: #9ca3af;
+          }
+          
+          label {
+            color: #d1d5db;
+          }
+          
+          .education-form-container input[type="text"],
+          .education-form-container input[type="url"],
+          .education-form-container input[type="date"],
+          .education-form-container select,
+          .education-form-container textarea {
+            background-color: #4b5563;
+            border-color: #6b7280;
+            color: #e5e7eb;
+          }
+          
+          .education-form-container input:focus,
+          .education-form-container select:focus,
+          .education-form-container textarea:focus {
+            border-color: #818cf8;
+            box-shadow: 0 0 0 3px rgba(129, 140, 248, 0.2);
+          }
+          
+          .input-icon {
+            color: #9ca3af;
+          }
+          
+          .input-help {
+            color: #9ca3af;
+          }
+          
+          .toggle-slider {
+            background-color: #6b7280;
+          }
+          
+          .toggle-slider:before {
+            background-color: #d1d5db;
+          }
+          
+          input:checked + .toggle-slider {
+            background-color: #818cf8;
+          }
+          
+          .file-upload-container {
+            background-color: #4b5563;
+            border-color: #6b7280;
+          }
+          
+          .file-icon {
+            color: #9ca3af;
+          }
+          
+          .file-name {
+            color: #d1d5db;
+          }
+          
+          .upload-btn {
+            background-color: #374151;
+            color: #d1d5db;
+            border-color: #6b7280;
+          }
+          
+          .upload-btn:hover {
+            background-color: #4b5563;
+            border-color: #9ca3af;
+          }
+          
+          .bullet-item {
+            border-color: #4b5563;
+          }
+          
+          .bullet-item span {
+            color: #d1d5db;
+          }
+          
+          .empty-state {
+            background-color: #4b5563;
+            color: #9ca3af;
+          }
+          
+          .form-actions {
+            border-color: #4b5563;
+          }
+          
+          .cancel-btn {
+            background-color: #374151;
+            color: #d1d5db;
+            border-color: #6b7280;
+          }
+          
+          .cancel-btn:hover {
+            background-color: #4b5563;
+            border-color: #9ca3af;
+          }
+
+          .error-message {
+            background-color: #7f1d1d;
+            color: #fecaca;
+            border-color: #dc2626;
+          }
+
+          .success-banner {
+            background-color: #065f46;
+            color: #a7f3d0;
+            border-color: #059669;
+          }
+
+          .loading-overlay {
+            background-color: rgba(31, 41, 55, 0.8);
+          }
+
+          .loading-content {
+            background-color: #374151;
+            color: #f9fafb;
+          }
         }
         
         /* Responsive Styles */

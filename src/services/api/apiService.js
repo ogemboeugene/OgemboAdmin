@@ -1,4 +1,5 @@
 import axios from 'axios';
+import { getAccessToken, getRefreshToken, setTokens, clearTokens, isTokenExpired } from '../../utils/tokenUtils';
 
 // Define base API URL - using local backend running on port 3000
 const API_BASE_URL = 'http://localhost:3000/api';
@@ -134,6 +135,155 @@ const normalizePermissions = (permissions) => {
   return ['read'];
 };
 
+/**
+ * Normalize task data to handle different input formats
+ * Supports both JSON API format and form-based format
+ */
+const normalizeTaskData = (taskData) => {
+  console.log('🔍 Normalizing task data:', taskData);
+  
+  // Handle different input formats
+  const normalized = {
+    // Handle project identification
+    projectId: taskData.projectId || taskData.project_id || null,
+    
+    // Handle basic task information
+    title: taskData.title ? taskData.title.trim() : null,
+    description: taskData.description ? taskData.description.trim() : null,
+    
+    // Handle status normalization
+    status: normalizeTaskStatus(taskData.status),
+    
+    // Handle priority normalization
+    priority: normalizeTaskPriority(taskData.priority),
+    
+    // Handle assignee identification
+    assigneeId: taskData.assigneeId || taskData.assignee_id || taskData.assigned_to || null,
+    createdBy: taskData.createdBy || taskData.created_by || null,
+    
+    // Handle dates
+    dueDate: taskData.dueDate || taskData.due_date || null,
+    startDate: taskData.startDate || taskData.start_date || null,
+    completedAt: taskData.completedAt || taskData.completed_at || null,
+    
+    // Handle hours and progress
+    estimatedHours: taskData.estimatedHours || taskData.estimated_hours || null,
+    actualHours: taskData.actualHours || taskData.actual_hours || null,
+    progress: taskData.progress || 0,
+    
+    // Handle tags - flexible format support
+    tags: normalizeTags(taskData.tags),
+    
+    // Handle category
+    category: taskData.category || 'General',
+    
+    // Handle subtasks and dependencies
+    parentTaskId: taskData.parentTaskId || taskData.parent_task_id || null,
+    dependencies: Array.isArray(taskData.dependencies) ? taskData.dependencies : [],
+    blockedBy: Array.isArray(taskData.blockedBy) ? taskData.blockedBy : [],
+    
+    // Handle additional fields
+    notes: taskData.notes || null,
+    attachments: Array.isArray(taskData.attachments) ? taskData.attachments : [],
+    
+    // Metadata
+    createdAt: taskData.createdAt || new Date().toISOString(),
+    updatedAt: new Date().toISOString()
+  };
+  
+  // Remove null/undefined values for cleaner API calls
+  Object.keys(normalized).forEach(key => {
+    if (normalized[key] === null || normalized[key] === undefined || normalized[key] === '') {
+      delete normalized[key];
+    }
+  });
+  
+  console.log('✅ Normalized task data:', normalized);
+  return normalized;
+};
+
+/**
+ * Normalize task status to match backend expectations
+ */
+const normalizeTaskStatus = (status) => {
+  if (!status) return 'pending';
+  
+  const statusMap = {
+    'todo': 'pending',
+    'pending': 'pending',
+    'in-progress': 'in-progress',
+    'in_progress': 'in-progress',
+    'inprogress': 'in-progress',
+    'doing': 'in-progress',
+    'completed': 'completed',
+    'done': 'completed',
+    'finished': 'completed',
+    'cancelled': 'cancelled',
+    'canceled': 'cancelled',
+    'on-hold': 'on-hold',
+    'onhold': 'on-hold',
+    'blocked': 'blocked'
+  };
+  
+  const lowerStatus = status.toLowerCase();
+  return statusMap[lowerStatus] || status;
+};
+
+/**
+ * Normalize task priority levels
+ */
+const normalizeTaskPriority = (priority) => {
+  if (!priority) return 'medium';
+  
+  const priorityMap = {
+    'lowest': 'low',
+    'low': 'low',
+    'normal': 'medium',
+    'medium': 'medium',
+    'high': 'high',
+    'highest': 'urgent',
+    'urgent': 'urgent',
+    'critical': 'urgent',
+    '1': 'low',
+    '2': 'medium', 
+    '3': 'high',
+    '4': 'urgent'
+  };
+  
+  const lowerPriority = priority.toString().toLowerCase();
+  return priorityMap[lowerPriority] || priority;
+};
+
+/**
+ * Normalize tags to array format
+ */
+const normalizeTags = (tags) => {
+  if (!tags) return [];
+  
+  // If already an array, return as is (filter out empty strings)
+  if (Array.isArray(tags)) {
+    return tags.filter(tag => tag && tag.trim()).map(tag => tag.trim());
+  }
+  
+  // If string, try to parse or split
+  if (typeof tags === 'string') {
+    // Handle JSON string
+    try {
+      const parsed = JSON.parse(tags);
+      if (Array.isArray(parsed)) {
+        return parsed.filter(tag => tag && tag.trim()).map(tag => tag.trim());
+      }    } catch (e) {
+      // Not JSON, try comma-separated or space-separated
+      return tags.split(/[,;\s]+/)
+        .filter(tag => tag && tag.trim())
+        .map(tag => tag.trim());
+    }
+  }
+  
+  // Default fallback
+  return [];
+};
+
 // Create an axios instance with default config
 const apiClient = axios.create({
   baseURL: API_BASE_URL,
@@ -153,10 +303,8 @@ apiClient.interceptors.request.use(
     const isPublicEndpoint = publicEndpoints.some(endpoint => config.url.includes(endpoint));
     
     if (!isPublicEndpoint) {
-      // Get token from localStorage - try multiple keys
-      const token = localStorage.getItem('access_token') || 
-                   localStorage.getItem('authToken') || 
-                   localStorage.getItem('token');
+      // Get token using utility function
+      const token = getAccessToken();
       
       // Debug token information
       console.log('🔍 Request authentication debug:', {
@@ -176,6 +324,11 @@ apiClient.interceptors.request.use(
           'Content-Type': config.headers['Content-Type'],
           Accept: config.headers.Accept
         });
+        
+        // Check if token is expired and warn
+        if (isTokenExpired(token)) {
+          console.warn('⚠️ Token appears to be expired, refresh mechanism will handle this');
+        }
       } else {
         console.warn('⚠️ No authentication token found for request:', config.url);
         console.warn('🗂️ Available localStorage keys:', Object.keys(localStorage));
@@ -192,7 +345,23 @@ apiClient.interceptors.request.use(
   }
 );
 
-// Add response interceptor for error handling
+// Token refresh functionality
+let isRefreshing = false;
+let failedQueue = [];
+
+const processQueue = (error, token = null) => {
+  failedQueue.forEach(prom => {
+    if (error) {
+      prom.reject(error);
+    } else {
+      prom.resolve(token);
+    }
+  });
+  
+  failedQueue = [];
+};
+
+// Add response interceptor for error handling and automatic token refresh
 apiClient.interceptors.response.use(
   (response) => {
     // Log successful responses for debugging
@@ -204,7 +373,7 @@ apiClient.interceptors.response.use(
     });
     return response;
   },
-  (error) => {
+  async (error) => {
     // Enhanced error logging
     console.error('❌ API Error:', {
       url: error.config?.url,
@@ -216,17 +385,109 @@ apiClient.interceptors.response.use(
       message: error.message
     });
     
-    // Handle specific error cases
+    const originalRequest = error.config;
     const { response } = error;
     
-    if (response && response.status === 401) {
-      console.warn('🔐 401 Unauthorized - Token may be invalid or expired');
-      // Handle unauthorized (e.g., token expired)
-      localStorage.removeItem('access_token');
-      localStorage.removeItem('authToken');
-      localStorage.removeItem('token');
-      localStorage.removeItem('refresh_token');
-      // Redirect to login or refresh token logic would go here
+    // Handle 401 Unauthorized with automatic token refresh
+    if (response && response.status === 401 && !originalRequest._retry) {
+      console.warn('🔐 401 Unauthorized - Attempting automatic token refresh');
+        // Check if this is a refresh token request that failed
+      if (originalRequest.url.includes('/auth/refresh')) {
+        console.error('🚨 Refresh token is invalid - redirecting to login');
+        clearTokens();
+        
+        // Redirect to login page
+        if (typeof window !== 'undefined') {
+          window.location.href = '/login';
+        }
+        return Promise.reject(error);
+      }
+      
+      if (isRefreshing) {
+        // If we're already refreshing, queue this request
+        console.log('🔄 Token refresh in progress - queueing request');
+        return new Promise((resolve, reject) => {
+          failedQueue.push({ resolve, reject });
+        }).then(token => {
+          originalRequest.headers.Authorization = `Bearer ${token}`;
+          return apiClient(originalRequest);
+        }).catch(err => {
+          return Promise.reject(err);
+        });
+      }
+      
+      originalRequest._retry = true;
+      isRefreshing = true;
+        const refreshToken = getRefreshToken();
+      
+      if (!refreshToken) {
+        console.error('🚨 No refresh token available - redirecting to login');
+        clearTokens();
+        
+        // Process failed queue
+        processQueue(error, null);
+        isRefreshing = false;
+        
+        // Redirect to login page
+        if (typeof window !== 'undefined') {
+          window.location.href = '/login';
+        }
+        return Promise.reject(error);
+      }
+      
+      try {
+        console.log('🔄 Attempting to refresh access token...');
+        
+        // Make refresh token request
+        const refreshResponse = await axios.post(`${API_BASE_URL}/auth/refresh`, {
+          refresh_token: refreshToken
+        }, {
+          headers: {
+            'Content-Type': 'application/json',
+            'Accept': 'application/json',
+          }
+        });
+        
+        if (refreshResponse.data && refreshResponse.data.success) {
+          const { access_token, refresh_token: newRefreshToken } = refreshResponse.data.data;
+          
+          console.log('✅ Token refresh successful');
+          
+          // Update stored tokens using utility function
+          setTokens(access_token, newRefreshToken);
+          
+          // Update the default authorization header
+          apiClient.defaults.headers.common['Authorization'] = `Bearer ${access_token}`;
+          
+          // Update the original request with new token
+          originalRequest.headers.Authorization = `Bearer ${access_token}`;
+          
+          // Process queued requests
+          processQueue(null, access_token);
+          
+          // Retry the original request
+          return apiClient(originalRequest);
+        } else {
+          throw new Error('Token refresh failed - invalid response');
+        }
+      } catch (refreshError) {
+        console.error('❌ Token refresh failed:', refreshError);
+        
+        // Clear all tokens using utility function
+        clearTokens();
+        
+        // Process failed queue
+        processQueue(refreshError, null);
+        
+        // Redirect to login page
+        if (typeof window !== 'undefined') {
+          window.location.href = '/login';
+        }
+        
+        return Promise.reject(refreshError);
+      } finally {
+        isRefreshing = false;
+      }
     } else if (response && response.status === 403) {
       console.warn('🚫 403 Forbidden - Access denied');
       console.warn('🔍 Check if token has proper permissions or if user has access to this resource');
@@ -242,21 +503,57 @@ const apiService = {  // Auth services
     login: (credentials) => apiClient.post('/auth/login', credentials),
     register: (userData) => apiClient.post('/auth/register', userData),
     logout: () => apiClient.post('/auth/logout'),
-    refreshToken: (refreshToken) => apiClient.post('/auth/refresh-token', { 
+    refreshToken: (refreshToken) => apiClient.post('/auth/refresh', { 
       refresh_token: refreshToken || localStorage.getItem('refresh_token') 
     }),
+    // Validate current token
+    validateToken: () => apiClient.get('/auth/validate'),
+    // Get current user info
+    me: () => apiClient.get('/auth/me'),
   },
-  
   // Profile services
   profile: {
+    // Get full profile data including user info, education, experience, skills, and settings
     get: () => apiClient.get('/profile'),
+    
+    // Update profile information
     update: (data) => apiClient.put('/profile', data),
-    updateAvatar: (formData) => apiClient.post('/profile/avatar', formData, {
-      headers: {
-        'Content-Type': 'multipart/form-data',
-      },
-    }),
-  },  // Project services
+      // Upload profile avatar
+    avatar: {
+      upload: (avatarData) => apiClient.post('/profile/avatar', avatarData),
+      remove: () => apiClient.delete('/profile/avatar'),
+    },
+      // Resume management
+    resume: {
+      upload: (resumeData) => apiClient.post('/profile/resume', resumeData),
+      delete: (resumeId) => apiClient.delete(`/profile/resume/${resumeId}`),
+      setPrimary: (resumeId) => apiClient.put(`/profile/resume/${resumeId}/primary`),
+    },
+    
+    // Profile section specific endpoints
+    sections: {
+      // Basic information (firstName, lastName, phone, etc.)
+      basic: (data) => apiClient.put('/profile/basic', data),
+      
+      // Professional information (title, bio, yearsOfExperience, etc.)
+      professional: (data) => apiClient.put('/profile/professional', data),
+      
+      // Address information
+      address: (data) => apiClient.put('/profile/address', data),
+      
+      // Social links
+      social: (data) => apiClient.put('/profile/social', data),
+      
+      // Languages
+      languages: (data) => apiClient.put('/profile/languages', data),
+      
+      // Availability and job preferences
+      availability: (data) => apiClient.put('/profile/availability', data),
+      
+      // Profile visibility settings
+      visibility: (data) => apiClient.put('/profile/visibility', data),
+    },
+  },// Project services
   projects: {
     getAll: (params = {}) => apiClient.get('/projects', { params }),
     getById: (id) => apiClient.get(`/projects/${id}`),
@@ -332,29 +629,206 @@ const apiService = {  // Auth services
     
     // Get skill statistics
     getStats: () => apiClient.get('/skills/stats'),
-  },
-  
-  // Education services
+  },    // Education services - Works with both dedicated endpoints and via profile
   education: {
+    // Get all education records
     getAll: () => apiClient.get('/education'),
+    
+    // Get specific education record by ID
+    getById: (id) => apiClient.get(`/education/${id}`),
+    
+    // Create new education record
     create: (data) => apiClient.post('/education', data),
+    
+    // Update existing education record
     update: (id, data) => apiClient.put(`/education/${id}`, data),
+    
+    // Delete education record
     delete: (id) => apiClient.delete(`/education/${id}`),
-  },
-  
-  // Experience services
+    
+    // Education bulk operations
+    bulkUpdate: (educationData) => apiClient.put('/education/bulk', educationData),
+  },    // Experience services - Works with both dedicated endpoints and via profile
   experience: {
+    // Get all work experience records
     getAll: () => apiClient.get('/experience'),
+    
+    // Get specific work experience by ID
+    getById: (id) => apiClient.get(`/experience/${id}`),
+    
+    // Create new work experience record
     create: (data) => apiClient.post('/experience', data),
+    
+    // Update existing work experience
     update: (id, data) => apiClient.put(`/experience/${id}`, data),
+    
+    // Delete work experience record
     delete: (id) => apiClient.delete(`/experience/${id}`),
-  },  // Dashboard statistics
+    
+    // Experience bulk operations
+    bulkUpdate: (experienceData) => apiClient.put('/experience/bulk', experienceData),
+    
+    // Toggle current job status
+    toggleCurrent: (id) => apiClient.put(`/experience/${id}/toggle-current`),
+  },// Dashboard statistics
   dashboard: {
     getStats: () => apiClient.get('/dashboard/stats'),
     getRecentProjects: () => apiClient.get('/dashboard/recent-projects'),
     getOverview: () => apiClient.get('/dashboard/overview'),
     getUpcomingDeadlines: (params = {}) => apiClient.get('/dashboard/upcoming-deadlines', { params }),
     getRecentActivity: (params = {}) => apiClient.get('/dashboard/recent-activity', { params }),
+  },    // Tasks services - Enhanced with flexible format support
+  tasks: {
+    // Get all tasks with optional filtering
+    getAll: (params = {}) => apiClient.get('/tasks', { params }),
+    
+    // Get specific task by ID with full details
+    getById: (id) => apiClient.get(`/tasks/${id}`),
+    
+    // Create new task with data normalization
+    create: (data) => {
+      const normalizedData = normalizeTaskData(data);
+      console.log('🔄 Creating task with normalized data:', normalizedData);
+      return apiClient.post('/tasks', normalizedData);
+    },
+    
+    // Update existing task with data normalization
+    update: (id, data) => {
+      const normalizedData = normalizeTaskData(data);
+      console.log('🔄 Updating task with normalized data:', { id, data: normalizedData });
+      return apiClient.put(`/tasks/${id}`, normalizedData);
+    },
+    
+    // Delete task
+    delete: (id) => {
+      console.log('🗑️ Deleting task:', id);
+      return apiClient.delete(`/tasks/${id}`);
+    },
+    
+    // Update task status only
+    updateStatus: (id, status) => {
+      const normalizedStatus = normalizeTaskStatus(status);
+      console.log('🔄 Updating task status:', { id, status: normalizedStatus });
+      return apiClient.patch(`/tasks/${id}/status`, { status: normalizedStatus });
+    },
+    
+    // Update task priority only
+    updatePriority: (id, priority) => {
+      const normalizedPriority = normalizeTaskPriority(priority);
+      console.log('🔄 Updating task priority:', { id, priority: normalizedPriority });
+      return apiClient.patch(`/tasks/${id}/priority`, { priority: normalizedPriority });
+    },
+    
+    // Update task assignee
+    updateAssignee: (id, assigneeId) => {
+      console.log('🔄 Updating task assignee:', { id, assigneeId });
+      return apiClient.patch(`/tasks/${id}/assignee`, { assigneeId });
+    },
+    
+    // Update task due date
+    updateDueDate: (id, dueDate) => {
+      console.log('🔄 Updating task due date:', { id, dueDate });
+      return apiClient.patch(`/tasks/${id}/due-date`, { dueDate });
+    },
+    
+    // Bulk operations
+    bulkUpdate: (taskIds, updateData) => {
+      const normalizedData = normalizeTaskData(updateData);
+      console.log('🔄 Bulk updating tasks:', { taskIds, data: normalizedData });
+      return apiClient.put('/tasks/bulk', { taskIds, ...normalizedData });
+    },
+    
+    bulkDelete: (taskIds) => {
+      console.log('🗑️ Bulk deleting tasks:', taskIds);
+      return apiClient.delete('/tasks/bulk', { data: { taskIds } });
+    },
+    
+    bulkStatusUpdate: (taskIds, status) => {
+      const normalizedStatus = normalizeTaskStatus(status);
+      console.log('🔄 Bulk status update:', { taskIds, status: normalizedStatus });
+      return apiClient.patch('/tasks/bulk/status', { taskIds, status: normalizedStatus });
+    },
+    
+    // Task dependencies
+    dependencies: {
+      add: (taskId, dependencyId) => apiClient.post(`/tasks/${taskId}/dependencies`, { dependencyId }),
+      remove: (taskId, dependencyId) => apiClient.delete(`/tasks/${taskId}/dependencies/${dependencyId}`),
+      get: (taskId) => apiClient.get(`/tasks/${taskId}/dependencies`),
+    },
+    
+    // Task subtasks
+    subtasks: {
+      getAll: (taskId) => apiClient.get(`/tasks/${taskId}/subtasks`),
+      create: (taskId, subtaskData) => {
+        const normalizedData = normalizeTaskData({ ...subtaskData, parentTaskId: taskId });
+        return apiClient.post(`/tasks/${taskId}/subtasks`, normalizedData);
+      },
+      update: (taskId, subtaskId, subtaskData) => {
+        const normalizedData = normalizeTaskData(subtaskData);
+        return apiClient.put(`/tasks/${taskId}/subtasks/${subtaskId}`, normalizedData);
+      },
+      delete: (taskId, subtaskId) => apiClient.delete(`/tasks/${taskId}/subtasks/${subtaskId}`),
+    },
+    
+    // Task time tracking
+    time: {
+      start: (taskId) => apiClient.post(`/tasks/${taskId}/time/start`),
+      stop: (taskId) => apiClient.post(`/tasks/${taskId}/time/stop`),
+      log: (taskId, hours, description = '') => apiClient.post(`/tasks/${taskId}/time/log`, { hours, description }),
+      get: (taskId) => apiClient.get(`/tasks/${taskId}/time`),
+    },
+    
+    // Task comments
+    comments: {
+      get: (taskId) => apiClient.get(`/tasks/${taskId}/comments`),
+      create: (taskId, comment) => apiClient.post(`/tasks/${taskId}/comments`, comment),
+      update: (taskId, commentId, comment) => apiClient.put(`/tasks/${taskId}/comments/${commentId}`, comment),
+      delete: (taskId, commentId) => apiClient.delete(`/tasks/${taskId}/comments/${commentId}`),
+    },
+    
+    // Task attachments
+    attachments: {
+      get: (taskId) => apiClient.get(`/tasks/${taskId}/attachments`),
+      upload: (taskId, formData) => apiClient.post(`/tasks/${taskId}/attachments`, formData, {
+        headers: { 'Content-Type': 'multipart/form-data' }
+      }),
+      delete: (taskId, attachmentId) => apiClient.delete(`/tasks/${taskId}/attachments/${attachmentId}`),
+    },
+    
+    // Task statistics and analytics
+    stats: {
+      getByProject: (projectId) => apiClient.get(`/tasks/stats/project/${projectId}`),
+      getByAssignee: (assigneeId) => apiClient.get(`/tasks/stats/assignee/${assigneeId}`),
+      getOverview: () => apiClient.get('/tasks/stats/overview'),
+      getProductivity: (params = {}) => apiClient.get('/tasks/stats/productivity', { params }),
+    }
+  },
+
+  // User settings
+  settings: {
+    // Get user settings
+    get: () => apiClient.get('/settings'),
+    
+    // Update user settings
+    update: (data) => apiClient.put('/settings', data),
+    
+    // Update theme settings
+    updateTheme: (themeData) => apiClient.put('/settings/theme', themeData),
+    
+    // Update notification preferences
+    updateNotifications: (notificationData) => apiClient.put('/settings/notifications', notificationData),
+    
+    // Update privacy settings
+    updatePrivacy: (privacyData) => apiClient.put('/settings/privacy', privacyData),
+    
+    // Update security settings
+    updateSecurity: (securityData) => apiClient.put('/settings/security', securityData),
+    
+    // Update display preferences
+    updateDisplay: (displayData) => apiClient.put('/settings/display', displayData),
+    
+    // Update developer preferences
+    updateDeveloperPrefs: (devData) => apiClient.put('/settings/developer-preferences', devData),
   },
 };
 

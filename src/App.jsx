@@ -8,7 +8,9 @@ import ProjectList from './pages/projects/ProjectList';
 import ProjectForm from './pages/projects/ProjectForm';
 import ProjectDetails from './pages/projects/ProjectDetails';
 import EducationForm from './pages/profile/EducationForm';
+import ViewAllEducation from './pages/profile/ViewAllEducation';
 import ExperienceForm from './pages/profile/ExperienceForm';
+import ViewAllExperience from './pages/profile/ViewAllExperience';
 import SkillsForm from './pages/profile/SkillsForm';
 import Calendar from './pages/calendar/Calendar';
 import Login from './pages/auth/Login';
@@ -57,14 +59,13 @@ const App = () => {
             
             {/* Skills routes */}
             <Route path="skills" element={<SkillsForm />} />
-            
-            {/* Education routes */}
+              {/* Education routes */}
+            <Route path="education" element={<ViewAllEducation />} />
             <Route path="education/new" element={<EducationForm />} />
             <Route path="education/:id/edit" element={<EducationForm editMode />} />
             <Route path="education/:id/view" element={<EducationForm editMode readOnly />} />
-            
-            {/* Experience routes */}
-            <Route path="experience" element={<ExperienceForm isListView />} />
+              {/* Experience routes */}
+            <Route path="experience" element={<ViewAllExperience />} />
             <Route path="experience/new" element={<ExperienceForm />} />
             <Route path="experience/:id/edit" element={<ExperienceForm editMode />} />
             <Route path="experience/:id/view" element={<ExperienceForm editMode readOnly />} />

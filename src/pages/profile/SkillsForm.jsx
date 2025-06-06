@@ -34,15 +34,22 @@ const SkillsForm = () => {
   const [activeCategory, setActiveCategory] = useState('all');
   const [autoSaveEnabled, setAutoSaveEnabled] = useState(false);  const [lastSaved, setLastSaved] = useState(null);
   const [isAutoSaving, setIsAutoSaving] = useState(false);
-    // Modal state
+  // Modal state
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [preselectedCategory, setPreselectedCategory] = useState(null);
+  
+  // Delete confirmation state
+  const [deleteConfirmation, setDeleteConfirmation] = useState({
+    isOpen: false,
+    skillToDelete: null,
+    category: null,
+    index: null
+  });
   
   // Refs for debouncing
   const autoSaveTimer = useRef(null);
   const suggestionTimer = useRef(null);
-  
-  // Form data
+    // Form data
   const [formData, setFormData] = useState({
     skills: [],
     languages: [],
@@ -51,6 +58,9 @@ const SkillsForm = () => {
     databases: [],
     platforms: []
   });
+  
+  // Track which skills have been modified
+  const [modifiedSkills, setModifiedSkills] = useState(new Set());
     // Input states
   const [skillInput, setSkillInput] = useState('');
   const [languageInput, setLanguageInput] = useState('');
@@ -253,45 +263,63 @@ const SkillsForm = () => {
     };
     
     fetchSkillsData();
-  }, []);
-  // Auto-save functionality
+  }, []);  // Auto-save functionality
   const autoSave = useCallback(async () => {
     if (!autoSaveEnabled || !isDirty || isSaving || isAutoSaving) return;
     
     setIsAutoSaving(true);
     
     try {
-      // Use the same logic as handleSubmit for individual skill updates
+      console.log('🔄 Auto-save: Processing modified skills only');
+      console.log('📝 Modified skills:', Array.from(modifiedSkills));
+      
+      // Only save skills that have been modified or are new
       const skillsToSave = [];
       
       // Process each category
       Object.keys(formData).forEach(category => {
         formData[category].forEach(skill => {
-          // Map form data to API format
-          const skillData = {
-            skill_name: skill.name,
-            category: mapCategoryToAPI(category),
-            proficiency_level: mapLevelToAPI(skill.level),
-            years_of_experience: skill.years || 1,
-            description: skill.description || '',
-            is_featured: skill.isFeatured || false
-          };
+          const identifier = getSkillIdentifier(category, skill.id);
           
-          skillsToSave.push({
-            id: skill.id,
-            isNew: skill.isNew,
-            data: skillData
-          });
+          // Only include skills that are new or have been modified
+          if (skill.isNew || modifiedSkills.has(identifier)) {
+            console.log(`💾 Auto-save: Including skill "${skill.name}" from ${category} (${skill.isNew ? 'new' : 'modified'})`);
+            
+            // Map form data to API format
+            const skillData = {
+              skill_name: skill.name,
+              category: mapCategoryToAPI(category),
+              proficiency_level: mapLevelToAPI(skill.level),
+              years_of_experience: skill.years || 1,
+              description: skill.description || '',
+              is_featured: skill.isFeatured || false
+            };
+            
+            skillsToSave.push({
+              id: skill.id,
+              isNew: skill.isNew,
+              data: skillData,
+              category: category
+            });
+          }
         });
       });
+      
+      console.log(`💾 Auto-save: Saving ${skillsToSave.length} skills`);
+      
+      if (skillsToSave.length === 0) {
+        console.log('ℹ️ Auto-save: No skills to save');
+        setIsAutoSaving(false);
+        return;
+      }
       
       // Save skills individually
       const savePromises = skillsToSave.map(async (skill) => {
         if (skill.isNew) {
-          // Create new skill
+          console.log(`➕ Auto-save: Creating new skill "${skill.data.skill_name}" in category "${skill.data.category}"`);
           return await apiService.skills.create(skill.data);
         } else {
-          // Update existing skill
+          console.log(`✏️ Auto-save: Updating skill "${skill.data.skill_name}" (ID: ${skill.id}) in category "${skill.data.category}"`);
           return await apiService.skills.update(skill.id, skill.data);
         }
       });
@@ -301,6 +329,7 @@ const SkillsForm = () => {
       
       setIsDirty(false);
       setLastSaved(new Date());
+      setModifiedSkills(new Set()); // Clear modified skills after successful save
       
       // Mark all skills as no longer new
       const updatedFormData = { ...formData };
@@ -312,13 +341,15 @@ const SkillsForm = () => {
       });
       setFormData(updatedFormData);
       
+      console.log('✅ Auto-save: All skills saved successfully');
+      
     } catch (error) {
-      console.error('Auto-save failed:', error);
+      console.error('❌ Auto-save failed:', error);
       // Don't show error for auto-save failures to avoid disrupting user
     } finally {
       setIsAutoSaving(false);
     }
-  }, [autoSaveEnabled, isDirty, isSaving, isAutoSaving, formData]);
+  }, [autoSaveEnabled, isDirty, isSaving, isAutoSaving, formData, modifiedSkills]);
 
   // Debounced auto-save effect
   useEffect(() => {
@@ -365,8 +396,7 @@ const SkillsForm = () => {
     return () => {
       window.removeEventListener('beforeunload', handleBeforeUnload);
     };
-  }, [isDirty]);
-  // Helper function to map UI categories to API categories
+  }, [isDirty]);  // Helper function to map UI categories to API categories
   const mapCategoryToAPI = (category) => {
     const categoryMap = {
       'skills': 'soft',
@@ -376,6 +406,7 @@ const SkillsForm = () => {
       'databases': 'database',
       'platforms': 'platform'
     };
+    console.log(`🔄 Mapping category: ${category} -> ${categoryMap[category] || 'other'}`);
     return categoryMap[category] || 'other';
   };
 
@@ -387,20 +418,35 @@ const SkillsForm = () => {
       'advanced': 'advanced',
       'expert': 'expert'
     };
+    console.log(`🔄 Mapping level: ${level} -> ${levelMap[level] || 'intermediate'}`);
     return levelMap[level] || 'intermediate';
+  };
+
+  // Helper function to create skill identifier
+  const getSkillIdentifier = (categoryId, skillId) => {
+    return `${categoryId}-${skillId}`;
+  };
+
+  // Helper function to mark skill as modified
+  const markSkillAsModified = (categoryId, skillId) => {
+    const identifier = getSkillIdentifier(categoryId, skillId);
+    console.log(`📝 Marking skill as modified: ${identifier}`);
+    setModifiedSkills(prev => new Set([...prev, identifier]));
   };
 
   // Form validation
   const validateFormData = () => {
     const errors = [];
     
-    // Check for duplicate skills across categories
-    const allSkillNames = Object.values(formData).flat().map(skill => skill.name.toLowerCase());
-    const duplicates = allSkillNames.filter((name, index) => allSkillNames.indexOf(name) !== index);
-    
-    if (duplicates.length > 0) {
-      errors.push(`Duplicate skills found: ${[...new Set(duplicates)].join(', ')}`);
-    }
+    // Check for duplicate skills WITHIN each category only
+    Object.keys(formData).forEach(category => {
+      const skillNames = formData[category].map(skill => skill.name.toLowerCase());
+      const duplicates = skillNames.filter((name, index) => skillNames.indexOf(name) !== index);
+      
+      if (duplicates.length > 0) {
+        errors.push(`Duplicate skills found in ${category}: ${[...new Set(duplicates)].join(', ')}`);
+      }
+    });
     
     // Check for invalid years
     Object.values(formData).flat().forEach(skill => {
@@ -410,8 +456,7 @@ const SkillsForm = () => {
     });
     
     return errors;
-  };
-  // Handle form submission
+  };  // Handle form submission
   const handleSubmit = async (e) => {
     e.preventDefault();
     setIsSaving(true);
@@ -427,37 +472,59 @@ const SkillsForm = () => {
         return;
       }
       
-      // Collect all skills that need to be saved
+      console.log('🔄 Manual save: Processing modified skills only');
+      console.log('📝 Modified skills:', Array.from(modifiedSkills));
+      
+      // Only save skills that have been modified or are new
       const skillsToSave = [];
       
       // Process each category
       Object.keys(formData).forEach(category => {
         formData[category].forEach(skill => {
-          // Map form data to API format
-          const skillData = {
-            skill_name: skill.name,
-            category: mapCategoryToAPI(category),
-            proficiency_level: mapLevelToAPI(skill.level),
-            years_of_experience: skill.years || 1,
-            description: skill.description || '',
-            is_featured: skill.isFeatured || false
-          };
+          const identifier = getSkillIdentifier(category, skill.id);
           
-          skillsToSave.push({
-            id: skill.id,
-            isNew: skill.isNew,
-            data: skillData
-          });
+          // Only include skills that are new or have been modified
+          if (skill.isNew || modifiedSkills.has(identifier)) {
+            console.log(`💾 Manual save: Including skill "${skill.name}" from ${category} (${skill.isNew ? 'new' : 'modified'})`);
+            
+            // Map form data to API format
+            const skillData = {
+              skill_name: skill.name,
+              category: mapCategoryToAPI(category),
+              proficiency_level: mapLevelToAPI(skill.level),
+              years_of_experience: skill.years || 1,
+              description: skill.description || '',
+              is_featured: skill.isFeatured || false
+            };
+            
+            console.log(`🔍 Skill data for "${skill.name}":`, skillData);
+            
+            skillsToSave.push({
+              id: skill.id,
+              isNew: skill.isNew,
+              data: skillData,
+              category: category
+            });
+          }
         });
       });
+      
+      console.log(`💾 Manual save: Saving ${skillsToSave.length} skills`);
+      
+      if (skillsToSave.length === 0) {
+        setSuccess('No changes to save!');
+        setTimeout(() => setSuccess(null), 3000);
+        setIsSaving(false);
+        return;
+      }
       
       // Save skills individually
       const savePromises = skillsToSave.map(async (skill) => {
         if (skill.isNew) {
-          // Create new skill
+          console.log(`➕ Manual save: Creating new skill "${skill.data.skill_name}" in category "${skill.data.category}"`);
           return await apiService.skills.create(skill.data);
         } else {
-          // Update existing skill
+          console.log(`✏️ Manual save: Updating skill "${skill.data.skill_name}" (ID: ${skill.id}) in category "${skill.data.category}"`);
           return await apiService.skills.update(skill.id, skill.data);
         }
       });
@@ -469,6 +536,7 @@ const SkillsForm = () => {
       setSuccess('Skills updated successfully!');
       setIsDirty(false);
       setLastSaved(new Date());
+      setModifiedSkills(new Set()); // Clear modified skills after successful save
       
       // Mark all skills as no longer new
       const updatedFormData = { ...formData };
@@ -480,13 +548,16 @@ const SkillsForm = () => {
       });
       setFormData(updatedFormData);
       
+      console.log('✅ Manual save: All skills saved successfully');
+      
       setTimeout(() => setSuccess(null), 3000);
     } catch (error) {
-      console.error('Error saving skills:', error);
+      console.error('❌ Manual save failed:', error);
       
       let errorMessage = 'Failed to save skills. Please try again.';
       
       if (error.response) {
+        console.error('❌ Backend error response:', error.response.data);
         switch (error.response.status) {
           case 401:
             errorMessage = 'You are not authorized to update skills. Please log in again.';
@@ -574,36 +645,82 @@ const SkillsForm = () => {
       setTimeout(() => setError(null), 3000);
     }
   };
+  // Remove skill item - show confirmation dialog
+  const removeSkillItem = (category, index) => {
+    const skillToDelete = formData[category][index];
+    console.log('🗑️ Initiating skill deletion:', skillToDelete.name);
+    
+    setDeleteConfirmation({
+      isOpen: true,
+      skillToDelete,
+      category,
+      index
+    });
+  };
 
-  // Remove skill item
-  const removeSkillItem = async (category, index) => {
-    const skillToRemove = formData[category][index];
+  // Confirm skill deletion
+  const confirmDelete = async () => {
+    const { skillToDelete, category, index } = deleteConfirmation;
     
     try {
-      if (skillToRemove.id && !skillToRemove.isNew) {
-        await apiService.skills.delete(skillToRemove.id);
+      console.log('⚠️ Deleting skill:', skillToDelete.name);
+      setIsSaving(true);
+      
+      // Delete from backend if it's an existing skill
+      if (skillToDelete.id && !skillToDelete.isNew) {
+        console.log('🌐 Deleting from backend, skill ID:', skillToDelete.id);
+        await apiService.skills.delete(skillToDelete.id);
       }
       
+      // Remove from local state
       setFormData(prev => ({
         ...prev,
         [category]: prev[category].filter((_, i) => i !== index)
       }));
       
-      setIsDirty(true);
+      // Close confirmation dialog
+      setDeleteConfirmation({
+        isOpen: false,
+        skillToDelete: null,
+        category: null,
+        index: null
+      });
       
-      if (skillToRemove.id && !skillToRemove.isNew) {
-        setSuccess(`${skillToRemove.name} removed successfully!`);
-        setTimeout(() => setSuccess(null), 2000);
+      // Show success message
+      setSuccess(`"${skillToDelete.name}" has been deleted successfully!`);
+      setTimeout(() => setSuccess(null), 3000);
+      
+      // Auto-save changes if there are other modified skills
+      if (modifiedSkills.size > 0) {
+        console.log('💾 Auto-saving remaining changes after deletion');
+        await handleSave(false); // false = don't show extra success message
       }
+      
+      console.log('✅ Skill deleted and changes saved successfully');
+      
     } catch (error) {
-      console.error('Error removing skill:', error);
-      setError(`Failed to remove ${skillToRemove.name}. Please try again.`);
+      console.error('❌ Error removing skill:', error);
+      setError(`Failed to delete "${skillToDelete.name}". Please try again.`);
       setTimeout(() => setError(null), 3000);
+    } finally {
+      setIsSaving(false);
     }
   };
 
+  // Cancel skill deletion
+  const cancelDelete = () => {
+    setDeleteConfirmation({
+      isOpen: false,
+      skillToDelete: null,
+      category: null,
+      index: null
+    });
+  };
   // Update skill level
   const updateSkillLevel = (category, index, level) => {
+    const skill = formData[category][index];
+    const identifier = getSkillIdentifier(category, skill.id);
+    
     const updatedItems = [...formData[category]];
     updatedItems[index] = {
       ...updatedItems[index],
@@ -616,6 +733,7 @@ const SkillsForm = () => {
     }));
     
     setIsDirty(true);
+    markSkillAsModified(category, skill.id);
   };
 
   // Update skill years with validation
@@ -634,6 +752,9 @@ const SkillsForm = () => {
       return;
     }
     
+    const skill = formData[category][index];
+    const identifier = getSkillIdentifier(category, skill.id);
+    
     const updatedItems = [...formData[category]];
     updatedItems[index] = {
       ...updatedItems[index],
@@ -647,6 +768,7 @@ const SkillsForm = () => {
     
     setIsDirty(true);
     setError(null);
+    markSkillAsModified(category, skill.id);
   };
 
   // Get level badge color
@@ -1034,7 +1156,7 @@ const SkillsForm = () => {
                 </div>
               )}
             </div>            <div className="add-skill-buttons">
-              <button
+              {/* <button
                 type="button"
                 className="add-skill-btn"
                 onClick={() => {
@@ -1044,7 +1166,7 @@ const SkillsForm = () => {
                 title="Add skill from input"
               >
                 <FaPlus /> Add
-              </button>
+              </button> */}
               <button
                 type="button"
                 className="add-skill-btn add-skill-btn--modal"
@@ -2736,9 +2858,7 @@ const SkillsForm = () => {
             animation-iteration-count: 1 !important;
             transition-duration: 0.01ms !important;
           }
-        }
-
-        /* Focus indicators for accessibility */
+        }        /* Focus indicators for accessibility */
         .skill-input-container input:focus,
         .skill-level select:focus,
         .skill-years input:focus,
@@ -2750,7 +2870,171 @@ const SkillsForm = () => {
         .cancel-btn:focus,
         .control-btn:focus {
           outline: 3px solid var(--skills-primary);
-          outline-offset: 2px;        }      `}</style>      {/* Add Skill Modal */}
+          outline-offset: 2px;
+        }
+
+        /* Delete Confirmation Modal Styles */
+        .modal-overlay {
+          position: fixed;
+          top: 0;
+          left: 0;
+          right: 0;
+          bottom: 0;
+          background: rgba(0, 0, 0, 0.6);
+          backdrop-filter: blur(4px);
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          z-index: 1000;
+          padding: 1rem;
+        }
+
+        .delete-confirmation-modal {
+          background: var(--skills-bg-primary);
+          border-radius: 16px;
+          box-shadow: var(--skills-shadow-xl);
+          max-width: 400px;
+          width: 100%;
+          overflow: hidden;
+          border: 1px solid var(--skills-border-primary);
+        }
+
+        .modal-header {
+          display: flex;
+          align-items: center;
+          gap: 1rem;
+          padding: 1.5rem;
+          background: linear-gradient(135deg, #fee2e2 0%, #fecaca 100%);
+          border-bottom: 1px solid #fca5a5;
+        }
+
+        .warning-icon {
+          color: #dc2626;
+          font-size: 1.5rem;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          width: 40px;
+          height: 40px;
+          background: rgba(239, 68, 68, 0.1);
+          border-radius: 50%;
+        }
+
+        .modal-header h3 {
+          color: #991b1b;
+          margin: 0;
+          font-size: 1.25rem;
+          font-weight: 600;
+        }
+
+        .modal-body {
+          padding: 1.5rem;
+        }
+
+        .modal-body p {
+          margin: 0 0 1rem 0;
+          color: var(--skills-text-primary);
+          line-height: 1.6;
+        }
+
+        .modal-body p:last-child {
+          margin-bottom: 0;
+        }
+
+        .warning-text {
+          color: var(--skills-text-secondary);
+          font-size: 0.9rem;
+          font-style: italic;
+        }
+
+        .modal-actions {
+          display: flex;
+          gap: 0.75rem;
+          padding: 1.5rem;
+          border-top: 1px solid var(--skills-border-primary);
+          background: var(--skills-bg-secondary);
+        }
+
+        .btn-danger {
+          display: flex;
+          align-items: center;
+          gap: 0.5rem;
+          padding: 0.75rem 1.5rem;
+          background: #dc2626;
+          color: white;
+          border: none;
+          border-radius: 8px;
+          font-weight: 500;
+          cursor: pointer;
+          transition: all 0.2s ease;
+          font-size: 0.875rem;
+        }
+
+        .btn-danger:hover:not(:disabled) {
+          background: #b91c1c;
+          transform: translateY(-1px);
+        }
+
+        .btn-danger:disabled {
+          opacity: 0.7;
+          cursor: not-allowed;
+          transform: none;
+        }
+
+        .btn-secondary {
+          flex: 1;
+          padding: 0.75rem 1.5rem;
+          background: var(--skills-bg-primary);
+          color: var(--skills-text-primary);
+          border: 1px solid var(--skills-border-primary);
+          border-radius: 8px;
+          font-weight: 500;
+          cursor: pointer;
+          transition: all 0.2s ease;
+          font-size: 0.875rem;
+        }
+
+        .btn-secondary:hover:not(:disabled) {
+          background: var(--skills-bg-tertiary);
+          border-color: var(--skills-border-secondary);
+        }
+
+        .btn-secondary:disabled {
+          opacity: 0.7;
+          cursor: not-allowed;
+        }
+
+        .spinner {
+          width: 14px;
+          height: 14px;
+          border: 2px solid rgba(255, 255, 255, 0.3);
+          border-top: 2px solid white;
+          border-radius: 50%;
+          animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+          0% { transform: rotate(0deg); }
+          100% { transform: rotate(360deg); }
+        }
+
+        /* Dark mode adjustments for modal */
+        [data-theme="dark"] .modal-header,
+        .dark-mode .modal-header {
+          background: linear-gradient(135deg, #450a0a 0%, #7f1d1d 100%);
+          border-bottom-color: #991b1b;
+        }
+
+        [data-theme="dark"] .modal-header h3,
+        .dark-mode .modal-header h3 {
+          color: #fca5a5;
+        }
+
+        [data-theme="dark"] .warning-icon,
+        .dark-mode .warning-icon {
+          background: rgba(239, 68, 68, 0.2);
+          color: #f87171;
+        }`}</style>      {/* Add Skill Modal */}
       <AddSkillModal
         isOpen={isAddModalOpen}
         onClose={handleModalClose}
@@ -2758,6 +3042,73 @@ const SkillsForm = () => {
         existingSkills={formData}
         preselectedCategory={preselectedCategory}
       />
+
+      {/* Delete Confirmation Dialog */}
+      <AnimatePresence>
+        {deleteConfirmation.isOpen && (
+          <motion.div
+            className="modal-overlay"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            onClick={cancelDelete}
+          >
+            <motion.div
+              className="delete-confirmation-modal"
+              initial={{ opacity: 0, scale: 0.95, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 20 }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="modal-header">
+                <div className="warning-icon">
+                  <FaExclamationTriangle />
+                </div>
+                <h3>Confirm Deletion</h3>
+              </div>
+              
+              <div className="modal-body">
+                <p>
+                  Are you sure you want to delete{' '}
+                  <strong>"{deleteConfirmation.skillToDelete?.name}"</strong>?
+                </p>
+                <p className="warning-text">
+                  This action cannot be undone. The skill will be permanently removed from your profile.
+                </p>
+              </div>
+              
+              <div className="modal-actions">
+                <button
+                  type="button"
+                  className="btn-secondary"
+                  onClick={cancelDelete}
+                  disabled={isSaving}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  className="btn-danger"
+                  onClick={confirmDelete}
+                  disabled={isSaving}
+                >
+                  {isSaving ? (
+                    <>
+                      <div className="spinner"></div>
+                      Deleting...
+                    </>
+                  ) : (
+                    <>
+                      <FaTimes />
+                      Delete Skill
+                    </>
+                  )}
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 };

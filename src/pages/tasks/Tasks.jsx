@@ -19,11 +19,20 @@ import {
   FaTags,
   FaSearch,
   FaChevronDown,
-  FaTasks,
+  FaChevronLeft,
   FaChevronRight,
-  FaArrowLeft
+  FaTasks,
+  FaArrowLeft,
+  FaUser,
+  FaBuilding,
+  FaStopwatch,
+  FaHistory,
+  FaLink,
+  FaLock,
+  FaProjectDiagram
 } from 'react-icons/fa';
 import { formatRelativeTime } from '../../utils/formatters';
+import apiService from '../../services/api/apiService';
 import './Tasks.css';
 
 const Tasks = ({ filter, showNewTaskForm = false }) => {
@@ -32,8 +41,7 @@ const Tasks = ({ filter, showNewTaskForm = false }) => {
   const [filteredTasks, setFilteredTasks] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState(null);
-  
-  // State for UI controls
+    // State for UI controls
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
   const [priorityFilter, setPriorityFilter] = useState('all');
@@ -43,6 +51,23 @@ const Tasks = ({ filter, showNewTaskForm = false }) => {
   const [expandedTask, setExpandedTask] = useState(null);
   const [editingTask, setEditingTask] = useState(null);
   const [newTaskFormVisible, setNewTaskFormVisible] = useState(showNewTaskForm);
+  
+  // Pagination state
+  const [currentPage, setCurrentPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
+  const [totalCount, setTotalCount] = useState(0);
+  const [pageSize, setPageSize] = useState(12);
+  
+  // API filters state
+  const [apiFilters, setApiFilters] = useState({
+    status: '',
+    priority: '',
+    assignee: '',
+    project: '',
+    category: '',
+    page: 1,
+    limit: 12
+  });
   
   // Get current location and params
   const location = useLocation();
@@ -68,114 +93,204 @@ const Tasks = ({ filter, showNewTaskForm = false }) => {
   // Refs
   const filterPanelRef = useRef(null);
   const searchInputRef = useRef(null);
-  
-  // New task form state
+    // New task form state
   const [newTask, setNewTask] = useState({
     title: '',
     description: '',
     status: 'pending',
     priority: 'medium',
     dueDate: '',
-    tags: []
+    tags: [],
+    assigneeId: '',
+    projectId: '',
+    estimatedHours: '',
+    category: 'General'
   });
-  
-  // Tag input state
+    // Tag input state
   const [tagInput, setTagInput] = useState('');
   
-  // Fetch tasks data
+  // Dropdown data state
+  const [projects, setProjects] = useState([]);
+  const [teamMembers, setTeamMembers] = useState([]);
+  const [loadingDropdowns, setLoadingDropdowns] = useState(false);// Fetch tasks data
   useEffect(() => {
     const fetchTasks = async () => {
       setIsLoading(true);
       try {
-        // Simulate API call
-        await new Promise(resolve => setTimeout(resolve, 800));
+        console.log('🔄 Fetching tasks from API...');
         
-        // Sample data
-        const data = [
-          {
-            id: 1,
-            title: 'Complete portfolio dashboard',
-            description: 'Finish the admin dashboard for the portfolio website with all required features.',
-            status: 'in-progress',
-            priority: 'high',
-            createdAt: '2023-07-10T10:30:00Z',
-            dueDate: '2023-07-25T23:59:59Z',
-            tags: ['UI/UX', 'React', 'Dashboard']
-          },
-          {
-            id: 2,
-            title: 'Add authentication system',
-            description: 'Implement JWT authentication with refresh tokens for the admin panel.',
-            status: 'pending',
-            priority: 'high',
-            createdAt: '2023-07-12T09:15:00Z',
-            dueDate: '2023-07-20T23:59:59Z',
-            tags: ['Security', 'Backend', 'JWT']
-          },
-          {
-            id: 3,
-            title: 'Create project showcase component',
-            description: 'Design and implement a component to showcase portfolio projects with filtering options.',
-            status: 'completed',
-            priority: 'medium',
-            createdAt: '2023-07-05T14:20:00Z',
-            dueDate: '2023-07-15T23:59:59Z',
-            completedAt: '2023-07-14T16:45:00Z',
-            tags: ['Frontend', 'Component', 'Portfolio']
-          },
-          {
-            id: 4,
-            title: 'Optimize image loading',
-            description: 'Implement lazy loading and image optimization for better performance.',
-            status: 'pending',
-            priority: 'low',
-            createdAt: '2023-07-14T11:00:00Z',
-            dueDate: '2023-07-30T23:59:59Z',
-            tags: ['Performance', 'Images', 'Optimization']
-          },
-          {
-            id: 5,
-            title: 'Set up CI/CD pipeline',
-            description: 'Configure GitHub Actions for continuous integration and deployment.',
-            status: 'in-progress',
-            priority: 'medium',
-            createdAt: '2023-07-08T16:30:00Z',
-            dueDate: '2023-07-22T23:59:59Z',
-            tags: ['DevOps', 'CI/CD', 'GitHub']
-          },
-          {
-            id: 6,
-            title: 'Write API documentation',
-            description: 'Create comprehensive documentation for all API endpoints using Swagger.',
-            status: 'pending',
-            priority: 'medium',
-            createdAt: '2023-07-15T09:45:00Z',
-            dueDate: '2023-07-28T23:59:59Z',
-            tags: ['Documentation', 'API', 'Swagger']
-          },
-          {
-            id: 7,
-            title: 'Implement dark mode',
-            description: 'Add dark mode support with theme toggle and system preference detection.',
-            status: 'completed',
-            priority: 'low',
-            createdAt: '2023-07-03T13:20:00Z',
-            dueDate: '2023-07-12T23:59:59Z',
-            completedAt: '2023-07-11T15:30:00Z',
-            tags: ['UI/UX', 'Theming', 'Accessibility']
+        // Prepare API parameters
+        const params = {
+          ...apiFilters,
+          search: searchQuery || undefined,
+          sort: sortBy,
+          order: sortDirection,
+          page: currentPage,
+          limit: pageSize
+        };
+        
+        // Remove empty parameters
+        Object.keys(params).forEach(key => {
+          if (params[key] === '' || params[key] === undefined) {
+            delete params[key];
           }
-        ];
+        });
         
-        setTasks(data);
+        const response = await apiService.tasks.getAll(params);
+        console.log('✅ Tasks response:', response);
+        
+        // Handle different response structures
+        let tasksData = [];
+        let pagination = null;
+        
+        if (response.data && response.data.success && response.data.data) {
+          const apiData = response.data.data;
+          tasksData = apiData.tasks || apiData;
+          pagination = apiData.pagination;
+        } else if (response.data && Array.isArray(response.data)) {
+          tasksData = response.data;
+        } else if (response.data && response.data.tasks) {
+          tasksData = response.data.tasks;
+          pagination = response.data.pagination;
+        }
+
+        // Transform API data to match frontend expectations
+        const transformedTasks = tasksData.map(task => ({
+          id: task.id,
+          title: task.title,
+          description: task.description,
+          status: task.status,
+          priority: task.priority,
+          createdAt: task.createdAt,
+          updatedAt: task.updatedAt,
+          dueDate: task.dueDate,
+          completedAt: task.completedAt,
+          tags: task.tags || [],
+          
+          // Additional server fields
+          assignee: task.assignee ? {
+            id: task.assignee.id,
+            name: task.assignee.name,
+            email: task.assignee.email,
+            avatar: task.assignee.avatar
+          } : null,
+          
+          project: task.project ? {
+            id: task.project.id,
+            name: task.project.name,
+            title: task.project.title
+          } : null,
+          
+          estimatedHours: task.estimatedHours || null,
+          actualHours: task.actualHours || null,
+          progress: task.progress || 0,
+          
+          // Comments and attachments counts
+          commentsCount: task.commentsCount || task.comments?.length || 0,
+          attachmentsCount: task.attachmentsCount || task.attachments?.length || 0,
+          
+          // Dependencies
+          dependencies: task.dependencies || [],
+          blockedBy: task.blockedBy || [],
+          
+          // Category
+          category: task.category || 'General'
+        }));
+        
+        console.log('🔄 Transformed tasks:', transformedTasks);
+        setTasks(transformedTasks);
+        
+        // Update pagination info
+        if (pagination) {
+          setTotalPages(pagination.pages || Math.ceil(pagination.total / pageSize));
+          setTotalCount(pagination.total || transformedTasks.length);
+        } else {
+          setTotalPages(1);
+          setTotalCount(transformedTasks.length);
+        }
+        
       } catch (error) {
-        console.error('Error fetching tasks:', error);
-        setError('Failed to load tasks. Please try again later.');
+        console.error('❌ Error fetching tasks:', error);
+        
+        // Handle different error scenarios
+        if (error.response?.status === 401) {
+          setError('Authentication required. Please log in again.');
+        } else if (error.response?.status === 403) {
+          setError('You do not have permission to view tasks.');
+        } else if (error.request && !error.response) {
+          setError('Unable to connect to the server. Please check your connection.');
+        } else {
+          setError('Failed to load tasks. Please try again later.');
+        }
       } finally {
         setIsLoading(false);
       }
+    };    fetchTasks();
+  }, [apiFilters, searchQuery, sortBy, sortDirection, currentPage, pageSize]);
+
+  // Fetch dropdown data for assignees and projects
+  useEffect(() => {
+    const fetchDropdownData = async () => {
+      setLoadingDropdowns(true);
+      try {
+        console.log('🔄 Fetching dropdown data...');
+        
+        // Fetch projects and team members concurrently
+        const [projectsResponse, teamResponse] = await Promise.all([
+          apiService.projects.getAll(),
+          apiService.projects.team.get()
+        ]);
+        
+        console.log('✅ Projects response:', projectsResponse);
+        console.log('✅ Team response:', teamResponse);
+        
+        // Handle projects data
+        let projectsData = [];
+        if (projectsResponse.data?.success && projectsResponse.data.data?.projects) {
+          projectsData = projectsResponse.data.data.projects;
+        } else if (projectsResponse.data && Array.isArray(projectsResponse.data)) {
+          projectsData = projectsResponse.data;
+        }
+        
+        // Handle team members data
+        let teamData = [];
+        if (teamResponse.data?.success && teamResponse.data.data) {
+          teamData = teamResponse.data.data;
+        } else if (teamResponse.data && Array.isArray(teamResponse.data)) {
+          teamData = teamResponse.data;
+        }
+        
+        // Transform data for dropdowns
+        const transformedProjects = projectsData.map(project => ({
+          id: project.id,
+          name: project.title || project.name,
+          value: project.id,
+          label: project.title || project.name
+        }));
+        
+        const transformedTeamMembers = teamData.map(member => ({
+          id: member.id,
+          name: member.name,
+          email: member.email,
+          value: member.id,
+          label: `${member.name} (${member.email})`
+        }));
+        
+        setProjects(transformedProjects);
+        setTeamMembers(transformedTeamMembers);
+        
+        console.log('🔄 Transformed projects:', transformedProjects);
+        console.log('🔄 Transformed team members:', transformedTeamMembers);
+        
+      } catch (error) {
+        console.error('❌ Error fetching dropdown data:', error);
+        // Don't show error to user, just log it - dropdowns will be empty but form still works
+      } finally {
+        setLoadingDropdowns(false);
+      }
     };
-    
-    fetchTasks();
+
+    fetchDropdownData();
   }, []);
   
   // Apply filters and sorting
@@ -287,25 +402,145 @@ const Tasks = ({ filter, showNewTaskForm = false }) => {
     setExpandedTask(expandedTask === taskId ? null : taskId);
   };
   
-  // Handle task status change
-  const handleStatusChange = (taskId, newStatus) => {
-    setTasks(prevTasks => 
-      prevTasks.map(task => 
-        task.id === taskId 
-          ? { 
-              ...task, 
-              status: newStatus,
-              completedAt: newStatus === 'completed' ? new Date().toISOString() : null
-            } 
-          : task
-      )
-    );
+  // Pagination handlers
+  const handlePageChange = (newPage) => {
+    if (newPage >= 1 && newPage <= totalPages) {
+      setCurrentPage(newPage);
+      setApiFilters(prev => ({
+        ...prev,
+        page: newPage
+      }));
+    }
   };
   
-  // Delete task
-  const handleDeleteTask = (taskId) => {
+  const handlePageSizeChange = (newSize) => {
+    setPageSize(newSize);
+    setCurrentPage(1); // Reset to first page
+    setApiFilters(prev => ({
+      ...prev,
+      limit: newSize,
+      page: 1
+    }));
+  };
+  
+  // API Filter Functions
+  const handleApiFilterChange = (filterType, value) => {
+    setApiFilters(prev => ({
+      ...prev,
+      [filterType]: value,
+      page: 1 // Reset to first page when filters change
+    }));
+    setCurrentPage(1);
+  };
+  
+  // Enhanced filter handlers that update both local and API filters
+  const handleStatusFilterChange = (status) => {
+    setStatusFilter(status);
+    handleApiFilterChange('status', status === 'all' ? '' : status);
+  };
+  
+  const handlePriorityFilterChange = (priority) => {
+    setPriorityFilter(priority);
+    handleApiFilterChange('priority', priority === 'all' ? '' : priority);
+  };
+  
+  // Search with debouncing
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setCurrentPage(1);
+      setApiFilters(prev => ({
+        ...prev,
+        page: 1
+      }));
+    }, 300); // 300ms debounce
+    
+    return () => clearTimeout(timer);
+  }, [searchQuery]);
+  
+  // Reset all filters
+  const resetFilters = () => {
+    setSearchQuery('');
+    setStatusFilter('all');
+    setPriorityFilter('all');
+    setSortBy('dueDate');
+    setSortDirection('asc');
+    setCurrentPage(1);
+    setApiFilters({
+      status: '',
+      priority: '',
+      assignee: '',
+      project: '',
+      category: '',
+      page: 1,
+      limit: pageSize
+    });
+    setShowFilters(false);
+  };
+  
+  // Handle task status change
+  const handleStatusChange = async (taskId, newStatus) => {
+    try {
+      console.log('🔄 Updating task status:', { taskId, newStatus });
+      
+      await apiService.tasks.updateStatus(taskId, newStatus);
+      console.log('✅ Task status updated successfully');
+      
+      // Update local state
+      setTasks(prevTasks => 
+        prevTasks.map(task => 
+          task.id === taskId 
+            ? { 
+                ...task, 
+                status: newStatus,
+                completedAt: newStatus === 'completed' ? new Date().toISOString() : null,
+                updatedAt: new Date().toISOString()
+              } 
+            : task
+        )
+      );
+      
+    } catch (error) {
+      console.error('❌ Error updating task status:', error);
+      
+      if (error.response?.status === 401) {
+        alert('Authentication required. Please log in again.');
+      } else if (error.response?.status === 403) {
+        alert('You do not have permission to update this task.');
+      } else if (error.response?.status === 404) {
+        alert('Task not found. It may have been deleted.');
+      } else {
+        alert('Failed to update task status. Please try again.');
+      }
+    }
+  };
+    // Delete task
+  const handleDeleteTask = async (taskId) => {
     if (window.confirm('Are you sure you want to delete this task?')) {
-      setTasks(prevTasks => prevTasks.filter(task => task.id !== taskId));
+      try {
+        console.log('🗑️ Deleting task:', taskId);
+        
+        await apiService.tasks.delete(taskId);
+        console.log('✅ Task deleted successfully');
+        
+        // Remove from local state
+        setTasks(prevTasks => prevTasks.filter(task => task.id !== taskId));
+        alert('Task deleted successfully!');
+        
+      } catch (error) {
+        console.error('❌ Error deleting task:', error);
+        
+        if (error.response?.status === 401) {
+          alert('Authentication required. Please log in again.');
+        } else if (error.response?.status === 403) {
+          alert('You do not have permission to delete this task.');
+        } else if (error.response?.status === 404) {
+          alert('Task not found. It may have already been deleted.');
+          // Still remove from local state in case of sync issues
+          setTasks(prevTasks => prevTasks.filter(task => task.id !== taskId));
+        } else {
+          alert('Failed to delete task. Please try again.');
+        }
+      }
     }
   };
   
@@ -313,15 +548,116 @@ const Tasks = ({ filter, showNewTaskForm = false }) => {
   const handleEditTask = (task) => {
     setEditingTask({...task});
   };
-  
   // Save edited task
-  const handleSaveEdit = () => {
-    setTasks(prevTasks => 
-      prevTasks.map(task => 
-        task.id === editingTask.id ? editingTask : task
-      )
-    );
-    setEditingTask(null);
+  const handleSaveEdit = async () => {
+    try {
+      console.log('🔄 Updating task:', editingTask);
+      
+      // Validate required fields
+      if (!editingTask.title.trim()) {
+        alert('Task title is required');
+        return;
+      }
+      
+      // Prepare comprehensive task data for API - normalization will be handled by apiService
+      const taskData = {
+        title: editingTask.title.trim(),
+        description: editingTask.description.trim(),
+        status: editingTask.status,
+        priority: editingTask.priority,
+        dueDate: editingTask.dueDate,
+        tags: editingTask.tags,
+        
+        // Include additional fields if they exist
+        assigneeId: editingTask.assigneeId || editingTask.assignee?.id || null,
+        projectId: editingTask.projectId || editingTask.project?.id || null,
+        estimatedHours: editingTask.estimatedHours || null,
+        actualHours: editingTask.actualHours || null,
+        category: editingTask.category || 'General',
+        progress: editingTask.progress || 0,
+        
+        // Include parent task if it exists
+        parentTaskId: editingTask.parentTaskId || null,
+        
+        // Include notes if they exist
+        notes: editingTask.notes || null
+      };
+      
+      const response = await apiService.tasks.update(editingTask.id, taskData);
+      console.log('✅ Task updated:', response);
+      
+      // Handle different response structures and extract the updated task data
+      let updatedTaskData = null;
+      if (response.data?.success && response.data.data?.task) {
+        updatedTaskData = response.data.data.task;
+      } else if (response.data?.data) {
+        updatedTaskData = response.data.data;
+      } else if (response.data) {
+        updatedTaskData = response.data;
+      }
+      
+      // Transform server response to match frontend expectations
+      const transformedTask = {
+        id: editingTask.id,
+        title: updatedTaskData?.title || editingTask.title,
+        description: updatedTaskData?.description || editingTask.description,
+        status: updatedTaskData?.status || editingTask.status,
+        priority: updatedTaskData?.priority || editingTask.priority,
+        dueDate: updatedTaskData?.dueDate || editingTask.dueDate,
+        tags: updatedTaskData?.tags || editingTask.tags || [],
+        
+        // Keep existing data and update with server response
+        assignee: updatedTaskData?.assignee || editingTask.assignee,
+        project: updatedTaskData?.project || editingTask.project,
+        estimatedHours: updatedTaskData?.estimatedHours || editingTask.estimatedHours,
+        actualHours: updatedTaskData?.actualHours || editingTask.actualHours,
+        category: updatedTaskData?.category || editingTask.category,
+        progress: updatedTaskData?.progress || editingTask.progress || 0,
+        
+        // Update timestamps
+        createdAt: editingTask.createdAt,
+        updatedAt: updatedTaskData?.updatedAt || new Date().toISOString(),
+        completedAt: updatedTaskData?.completedAt || editingTask.completedAt,
+        
+        // Keep counts and other metadata
+        commentsCount: editingTask.commentsCount || 0,
+        attachmentsCount: editingTask.attachmentsCount || 0,
+        dependencies: editingTask.dependencies || [],
+        blockedBy: editingTask.blockedBy || []
+      };
+      
+      // Update local state
+      setTasks(prevTasks => 
+        prevTasks.map(task => 
+          task.id === editingTask.id ? transformedTask : task
+        )
+      );
+      
+      setEditingTask(null);
+      alert('Task updated successfully!');
+      
+    } catch (error) {
+      console.error('❌ Error updating task:', error);
+      
+      // Enhanced error handling
+      let errorMessage = 'Failed to update task. Please try again.';
+      
+      if (error.response?.status === 401) {
+        errorMessage = 'Authentication required. Please log in again.';
+      } else if (error.response?.status === 403) {
+        errorMessage = 'You do not have permission to update this task.';
+      } else if (error.response?.status === 404) {
+        errorMessage = 'Task not found. It may have been deleted.';
+      } else if (error.response?.status === 400) {
+        errorMessage = error.response.data?.message || 'Invalid task data. Please check your inputs.';
+      } else if (error.response?.status === 422) {
+        errorMessage = 'Validation failed. Please check required fields.';
+      } else if (error.response?.data?.message) {
+        errorMessage = error.response.data.message;
+      }
+      
+      alert(errorMessage);
+    }
   };
   
   // Cancel editing
@@ -384,36 +720,135 @@ const Tasks = ({ filter, showNewTaskForm = false }) => {
       tags: prev.tags.filter(tag => tag !== tagToRemove)
     }));
   };
-  
   // Create new task
-  const handleCreateTask = (e) => {
+  const handleCreateTask = async (e) => {
     e.preventDefault();
     
-    // Validate form
-    if (!newTask.title.trim() || !newTask.dueDate) {
-      alert('Please fill in all required fields');
+    // Validate required fields
+    if (!newTask.title.trim()) {
+      alert('Task title is required');
       return;
     }
     
-    const newTaskWithId = {
-      ...newTask,
-      id: Date.now(),
-      createdAt: new Date().toISOString()
-    };
+    if (!newTask.dueDate) {
+      alert('Due date is required');
+      return;
+    }
     
-    setTasks(prev => [newTaskWithId, ...prev]);
-    
-    // Reset form
-    setNewTask({
-      title: '',
-      description: '',
-      status: 'pending',
-      priority: 'medium',
-      dueDate: '',
-      tags: []
-    });
-    
-    setNewTaskFormVisible(false);
+    try {
+      console.log('🔄 Creating new task:', newTask);
+      
+      // Prepare comprehensive task data for API - normalization will be handled by apiService
+      const taskData = {
+        title: newTask.title.trim(),
+        description: newTask.description.trim(),
+        status: newTask.status,
+        priority: newTask.priority,
+        dueDate: newTask.dueDate,
+        tags: newTask.tags,
+        category: newTask.category,
+        estimatedHours: newTask.estimatedHours ? parseFloat(newTask.estimatedHours) : null,
+        assigneeId: newTask.assigneeId || null,
+        projectId: newTask.projectId || null,
+        
+        // Additional metadata
+        createdBy: null, // Will be set by backend based on authentication
+        notes: newTask.notes || null
+      };
+      
+      const response = await apiService.tasks.create(taskData);
+      console.log('✅ Task created:', response);
+      
+      // Handle different response structures and extract the created task data
+      let createdTaskData = null;
+      if (response.data?.success && response.data.data?.task) {
+        createdTaskData = response.data.data.task;
+      } else if (response.data?.data) {
+        createdTaskData = response.data.data;
+      } else if (response.data) {
+        createdTaskData = response.data;
+      }
+      
+      if (!createdTaskData) {
+        throw new Error('Invalid response structure from server');
+      }
+      
+      // Transform server response to match frontend expectations
+      const transformedTask = {
+        id: createdTaskData.id,
+        title: createdTaskData.title,
+        description: createdTaskData.description,
+        status: createdTaskData.status,
+        priority: createdTaskData.priority,
+        createdAt: createdTaskData.createdAt,
+        updatedAt: createdTaskData.updatedAt,
+        dueDate: createdTaskData.dueDate,
+        completedAt: createdTaskData.completedAt,
+        tags: createdTaskData.tags || [],
+        
+        // Handle nested objects
+        assignee: createdTaskData.assignee || null,
+        project: createdTaskData.project || null,
+        
+        // Additional fields with defaults
+        estimatedHours: createdTaskData.estimatedHours || null,
+        actualHours: createdTaskData.actualHours || null,
+        progress: createdTaskData.progress || 0,
+        commentsCount: createdTaskData.commentsCount || 0,
+        attachmentsCount: createdTaskData.attachmentsCount || 0,
+        dependencies: createdTaskData.dependencies || [],
+        blockedBy: createdTaskData.blockedBy || [],
+        category: createdTaskData.category || 'General',
+        
+        // Subtasks if any
+        subtasks: createdTaskData.subtasks || []
+      };
+      
+      // Add to beginning of tasks list
+      setTasks(prev => [transformedTask, ...prev]);
+      
+      // Reset form to initial state
+      setNewTask({
+        title: '',
+        description: '',
+        status: 'pending',
+        priority: 'medium',
+        dueDate: '',
+        tags: [],
+        assigneeId: '',
+        projectId: '',
+        estimatedHours: '',
+        category: 'General',
+        notes: ''
+      });
+      
+      // Close form and clear tag input
+      setNewTaskFormVisible(false);
+      setTagInput('');
+      alert('Task created successfully!');
+      
+    } catch (error) {
+      console.error('❌ Error creating task:', error);
+      
+      // Enhanced error handling
+      let errorMessage = 'Failed to create task. Please try again.';
+      
+      if (error.response?.status === 401) {
+        errorMessage = 'Authentication required. Please log in again.';
+      } else if (error.response?.status === 403) {
+        errorMessage = 'You do not have permission to create tasks.';
+      } else if (error.response?.status === 400) {
+        errorMessage = error.response.data?.message || 'Invalid task data. Please check your inputs.';
+      } else if (error.response?.status === 422) {
+        errorMessage = 'Validation failed. Please check required fields.';
+      } else if (error.response?.data?.message) {
+        errorMessage = error.response.data.message;
+      } else if (error.message) {
+        errorMessage = error.message;
+      }
+      
+      alert(errorMessage);
+    }
   };
   
   // Get priority badge class
@@ -435,8 +870,7 @@ const Tasks = ({ filter, showNewTaskForm = false }) => {
       default: return '';
     }
   };
-  
-  // Get status icon
+    // Get status icon
   const getStatusIcon = (status) => {
     switch (status) {
       case 'completed': return <FaCheckCircle />;
@@ -444,6 +878,69 @@ const Tasks = ({ filter, showNewTaskForm = false }) => {
       case 'pending': return <FaClock />;
       default: return null;
     }
+  };
+
+  // Helper function to find task by ID
+  const getTaskById = (taskId) => {
+    return tasks.find(task => task.id === taskId);
+  };
+
+  // Helper function to render dependency list
+  const renderDependencyList = (dependencyIds, title, icon, emptyMessage) => {
+    if (!dependencyIds || dependencyIds.length === 0) {
+      return null;
+    }
+
+    const dependencyTasks = dependencyIds
+      .map(id => getTaskById(id))
+      .filter(task => task !== undefined);
+
+    if (dependencyTasks.length === 0) {
+      return null;
+    }
+
+    return (
+      <div className="info-section">
+        <h4>{icon} {title}</h4>
+        <div className="dependency-list">
+          {dependencyTasks.map(depTask => (
+            <div key={depTask.id} className="dependency-item">
+              <div className="dependency-status">
+                {getStatusIcon(depTask.status)}
+                <span className={`dependency-status-text ${depTask.status}`}>
+                  {depTask.status.replace('-', ' ')}
+                </span>
+              </div>
+              <div className="dependency-info">
+                <span className="dependency-title">{depTask.title}</span>
+                <span className={`dependency-priority priority-${depTask.priority}`}>
+                  {depTask.priority}
+                </span>
+              </div>
+              {depTask.dueDate && (
+                <div className="dependency-date">
+                  <FaCalendarAlt />
+                  <span>{new Date(depTask.dueDate).toLocaleDateString()}</span>
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  };
+
+  // Check if task is blocked (has incomplete dependencies)
+  const isTaskBlocked = (task) => {
+    if (!task.dependencies || task.dependencies.length === 0) {
+      return false;
+    }
+    
+    const dependencyTasks = task.dependencies
+      .map(id => getTaskById(id))
+      .filter(task => task !== undefined);
+    
+    return dependencyTasks.some(depTask => depTask.status !== 'completed');
   };
   
   // Check if task is overdue
@@ -634,28 +1131,27 @@ const Tasks = ({ filter, showNewTaskForm = false }) => {
               >
                 <div className="filter-group">
                   <label>Status</label>
-                  <div className="filter-options">
-                    <button 
+                  <div className="filter-options">                    <button 
                       className={statusFilter === 'all' ? 'active' : ''}
-                      onClick={() => setStatusFilter('all')}
+                      onClick={() => handleStatusFilterChange('all')}
                     >
                       All
                     </button>
                     <button 
                       className={statusFilter === 'pending' ? 'active' : ''}
-                      onClick={() => setStatusFilter('pending')}
+                      onClick={() => handleStatusFilterChange('pending')}
                     >
                       Pending
                     </button>
                     <button 
                       className={statusFilter === 'in-progress' ? 'active' : ''}
-                      onClick={() => setStatusFilter('in-progress')}
+                      onClick={() => handleStatusFilterChange('in-progress')}
                     >
                       In Progress
                     </button>
                     <button 
                       className={statusFilter === 'completed' ? 'active' : ''}
-                      onClick={() => setStatusFilter('completed')}
+                      onClick={() => handleStatusFilterChange('completed')}
                     >
                       Completed
                     </button>
@@ -664,28 +1160,27 @@ const Tasks = ({ filter, showNewTaskForm = false }) => {
                 
                 <div className="filter-group">
                   <label>Priority</label>
-                  <div className="filter-options">
-                    <button 
+                  <div className="filter-options">                    <button 
                       className={priorityFilter === 'all' ? 'active' : ''}
-                      onClick={() => setPriorityFilter('all')}
+                      onClick={() => handlePriorityFilterChange('all')}
                     >
                       All
                     </button>
                     <button 
                       className={priorityFilter === 'high' ? 'active' : ''}
-                      onClick={() => setPriorityFilter('high')}
+                      onClick={() => handlePriorityFilterChange('high')}
                     >
                       High
                     </button>
                     <button 
                       className={priorityFilter === 'medium' ? 'active' : ''}
-                      onClick={() => setPriorityFilter('medium')}
+                      onClick={() => handlePriorityFilterChange('medium')}
                     >
                       Medium
                     </button>
                     <button 
                       className={priorityFilter === 'low' ? 'active' : ''}
-                      onClick={() => setPriorityFilter('low')}
+                      onClick={() => handlePriorityFilterChange('low')}
                     >
                       Low
                     </button>
@@ -906,8 +1401,7 @@ const Tasks = ({ filter, showNewTaskForm = false }) => {
                   </div>
                 ) : (
                   // View mode
-                  <>
-                    <div className="task-header">
+                  <>                    <div className="task-header">
                       <div className="task-badges">
                         <span className={`status-badge ${getStatusBadgeClass(task.status)}`}>
                           {getStatusIcon(task.status)} {task.status.replace('-', ' ')}
@@ -915,6 +1409,11 @@ const Tasks = ({ filter, showNewTaskForm = false }) => {
                         <span className={`priority-badge ${getPriorityBadgeClass(task.priority)}`}>
                           {task.priority}
                         </span>
+                        {isTaskBlocked(task) && (
+                          <span className="blocked-badge">
+                            <FaLock /> Blocked
+                          </span>
+                        )}
                       </div>
                       
                       <div className="task-actions">
@@ -953,7 +1452,40 @@ const Tasks = ({ filter, showNewTaskForm = false }) => {
                           </div>
                         )}
                       </div>
-                      
+                        {/* Additional Task Information */}
+                      <div className="task-additional-info">
+                        {task.assignee && (
+                          <div className="task-assignee">
+                            <FaUser />
+                            <span>{task.assignee.name}</span>
+                          </div>
+                        )}
+                        
+                        {task.project && (
+                          <div className="task-project">
+                            <FaBuilding />
+                            <span>{task.project.name || task.project.title}</span>
+                          </div>
+                        )}
+                        
+                        {(task.estimatedHours || task.actualHours) && (
+                          <div className="task-time-tracking">
+                            {task.estimatedHours && (
+                              <div className="time-estimate">
+                                <FaStopwatch />
+                                <span>Est: {task.estimatedHours}h</span>
+                              </div>
+                            )}
+                            {task.actualHours && (
+                              <div className="time-actual">
+                                <FaHistory />
+                                <span>Actual: {task.actualHours}h</span>
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </div>
+
                       <div className="task-tags">
                         <FaTags />
                         <div className="tags-list">
@@ -987,10 +1519,110 @@ const Tasks = ({ filter, showNewTaskForm = false }) => {
                             animate={{ opacity: 1, height: 'auto' }}
                             exit={{ opacity: 0, height: 0 }}
                             transition={{ duration: 0.3 }}
-                          >
-                            <div className="task-description">
+                          >                            <div className="task-description">
                               <h4>Description</h4>
                               <p>{task.description}</p>
+                            </div>
+                            
+                            {/* Extended Task Information */}
+                            <div className="task-extended-info">
+                              {task.assignee && (
+                                <div className="info-section">
+                                  <h4>Assignee</h4>
+                                  <div className="assignee-info">
+                                    {task.assignee.avatar && (
+                                      <img src={task.assignee.avatar} alt={task.assignee.name} className="assignee-avatar" />
+                                    )}
+                                    <div className="assignee-details">
+                                      <span className="assignee-name">{task.assignee.name}</span>
+                                      {task.assignee.email && (
+                                        <span className="assignee-email">{task.assignee.email}</span>
+                                      )}
+                                    </div>
+                                  </div>
+                                </div>
+                              )}
+                              
+                              {task.project && (
+                                <div className="info-section">
+                                  <h4>Project</h4>
+                                  <div className="project-info">
+                                    <FaBuilding />
+                                    <span>{task.project.name || task.project.title}</span>
+                                  </div>
+                                </div>
+                              )}
+                              
+                              {(task.estimatedHours || task.actualHours || task.progress > 0) && (
+                                <div className="info-section">
+                                  <h4>Time & Progress</h4>
+                                  <div className="time-progress-info">
+                                    {task.estimatedHours && (
+                                      <div className="time-item">
+                                        <FaStopwatch />
+                                        <span>Estimated: {task.estimatedHours} hours</span>
+                                      </div>
+                                    )}
+                                    {task.actualHours && (
+                                      <div className="time-item">
+                                        <FaHistory />
+                                        <span>Actual: {task.actualHours} hours</span>
+                                      </div>
+                                    )}
+                                    {task.progress > 0 && (
+                                      <div className="progress-item">
+                                        <span>Progress: {task.progress}%</span>
+                                        <div className="progress-bar">
+                                          <div 
+                                            className="progress-fill" 
+                                            style={{ width: `${task.progress}%` }}
+                                          ></div>
+                                        </div>
+                                      </div>
+                                    )}
+                                  </div>
+                                </div>
+                              )}
+                              
+                              {task.category && (
+                                <div className="info-section">
+                                  <h4>Category</h4>
+                                  <span className="category-badge">{task.category}</span>
+                                </div>
+                              )}
+                                {(task.commentsCount > 0 || task.attachmentsCount > 0) && (
+                                <div className="info-section">
+                                  <h4>Attachments</h4>
+                                  <div className="attachments-info">
+                                    {task.commentsCount > 0 && (
+                                      <span className="attachment-count">
+                                        💬 {task.commentsCount} comment{task.commentsCount !== 1 ? 's' : ''}
+                                      </span>
+                                    )}
+                                    {task.attachmentsCount > 0 && (
+                                      <span className="attachment-count">
+                                        📎 {task.attachmentsCount} attachment{task.attachmentsCount !== 1 ? 's' : ''}
+                                      </span>
+                                    )}
+                                  </div>
+                                </div>
+                              )}
+
+                              {/* Task Dependencies */}
+                              {renderDependencyList(
+                                task.dependencies, 
+                                'Dependencies', 
+                                <FaLink />, 
+                                'No dependencies'
+                              )}
+
+                              {/* Tasks Blocked By This Task */}
+                              {renderDependencyList(
+                                task.blockedBy, 
+                                'Blocking Tasks', 
+                                <FaProjectDiagram />, 
+                                'Not blocking any tasks'
+                              )}
                             </div>
                             
                             <div className="task-timeline">
@@ -1048,6 +1680,92 @@ const Tasks = ({ filter, showNewTaskForm = false }) => {
           </div>
         )}
       </div>
+        {/* Enhanced Pagination Controls */}
+      {totalPages > 1 && (
+        <motion.div 
+          className="tasks-pagination"
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.3 }}
+        >
+          <div className="pagination-info">
+            <span>
+              Showing {Math.min(((currentPage - 1) * pageSize) + 1, totalCount)} to {Math.min(currentPage * pageSize, totalCount)} of {totalCount} tasks
+            </span>
+          </div>
+          
+          <div className="pagination-controls">
+            <button 
+              className="pagination-btn"
+              onClick={() => handlePageChange(currentPage - 1)}
+              disabled={currentPage === 1}
+              aria-label="Previous page"
+            >
+              <FaChevronLeft />
+            </button>
+            
+            {/* Page number buttons */}
+            {Array.from({ length: Math.min(totalPages, 7) }, (_, i) => {
+              let page;
+              if (totalPages <= 7) {
+                page = i + 1;
+              } else if (currentPage <= 4) {
+                page = i + 1;
+              } else if (currentPage >= totalPages - 3) {
+                page = totalPages - 6 + i;
+              } else {
+                page = currentPage - 3 + i;
+              }
+              
+              return (
+                <button
+                  key={page}
+                  className={`pagination-btn ${currentPage === page ? 'active' : ''}`}
+                  onClick={() => handlePageChange(page)}
+                >
+                  {page}
+                </button>
+              );
+            })}
+            
+            {totalPages > 7 && currentPage < totalPages - 3 && (
+              <>
+                <span className="pagination-ellipsis">...</span>
+                <button
+                  className="pagination-btn"
+                  onClick={() => handlePageChange(totalPages)}
+                >
+                  {totalPages}
+                </button>
+              </>
+            )}
+            
+            <button 
+              className="pagination-btn"
+              onClick={() => handlePageChange(currentPage + 1)}
+              disabled={currentPage === totalPages}
+              aria-label="Next page"
+            >
+              <FaChevronRight />
+            </button>
+          </div>
+          
+          <div className="page-size-selector">
+            <label htmlFor="pageSize">Tasks per page:</label>
+            <select
+              id="pageSize"
+              value={pageSize}
+              onChange={(e) => handlePageSizeChange(parseInt(e.target.value))}
+              className="page-size-select"
+            >
+              <option value={6}>6</option>
+              <option value={12}>12</option>
+              <option value={24}>24</option>
+              <option value={48}>48</option>
+            </select>
+          </div>
+        </motion.div>
+      )}
       
       {/* New Task Form Modal */}
       <AnimatePresence>
@@ -1133,8 +1851,7 @@ const Tasks = ({ filter, showNewTaskForm = false }) => {
                     </select>
                   </div>
                 </div>
-                
-                <div className="form-group">
+                  <div className="form-group">
                   <label htmlFor="dueDate">Due Date</label>
                   <input
                     id="dueDate"
@@ -1144,6 +1861,85 @@ const Tasks = ({ filter, showNewTaskForm = false }) => {
                     onChange={handleNewTaskInputChange}
                     required
                   />
+                </div>
+                
+                {/* Additional Task Fields */}
+                <div className="form-row">
+                  <div className="form-group">
+                    <label htmlFor="category">Category</label>
+                    <select
+                      id="category"
+                      name="category"
+                      value={newTask.category}
+                      onChange={handleNewTaskInputChange}
+                    >
+                      <option value="General">General</option>
+                      <option value="Development">Development</option>
+                      <option value="Design">Design</option>
+                      <option value="Testing">Testing</option>
+                      <option value="Documentation">Documentation</option>
+                      <option value="DevOps">DevOps</option>
+                      <option value="Marketing">Marketing</option>
+                      <option value="Research">Research</option>
+                    </select>
+                  </div>
+                  
+                  <div className="form-group">
+                    <label htmlFor="estimatedHours">Estimated Hours</label>
+                    <input
+                      id="estimatedHours"
+                      type="number"
+                      name="estimatedHours"
+                      value={newTask.estimatedHours}
+                      onChange={handleNewTaskInputChange}
+                      placeholder="0"
+                      min="0"
+                      step="0.5"
+                    />
+                  </div>
+                </div>
+                  <div className="form-row">
+                  <div className="form-group">
+                    <label htmlFor="assigneeId">Assignee (Optional)</label>
+                    <select
+                      id="assigneeId"
+                      name="assigneeId"
+                      value={newTask.assigneeId}
+                      onChange={handleNewTaskInputChange}
+                      disabled={loadingDropdowns}
+                    >
+                      <option value="">Select assignee...</option>
+                      {teamMembers.map(member => (
+                        <option key={member.id} value={member.id}>
+                          {member.label}
+                        </option>
+                      ))}
+                    </select>
+                    {loadingDropdowns && (
+                      <span className="loading-text">Loading team members...</span>
+                    )}
+                  </div>
+                  
+                  <div className="form-group">
+                    <label htmlFor="projectId">Project (Optional)</label>
+                    <select
+                      id="projectId"
+                      name="projectId"
+                      value={newTask.projectId}
+                      onChange={handleNewTaskInputChange}
+                      disabled={loadingDropdowns}
+                    >
+                      <option value="">Select project...</option>
+                      {projects.map(project => (
+                        <option key={project.id} value={project.id}>
+                          {project.label}
+                        </option>
+                      ))}
+                    </select>
+                    {loadingDropdowns && (
+                      <span className="loading-text">Loading projects...</span>
+                    )}
+                  </div>
                 </div>
                 
                 <div className="form-group">

@@ -1,29 +1,48 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
-import { resolve } from 'path'
-import { nodePolyfills } from './src/vite-plugin-crypto-polyfill.js'
+import { NodeGlobalsPolyfillPlugin } from '@esbuild-plugins/node-globals-polyfill'
+import { NodeModulesPolyfillPlugin } from '@esbuild-plugins/node-modules-polyfill'
 
 // https://vite.dev/config/
 export default defineConfig({
   plugins: [
     react(),
-    nodePolyfills()
   ],
   resolve: {
     alias: {
-      crypto: resolve(__dirname, 'node_modules/crypto-browserify'),
-      stream: resolve(__dirname, 'node_modules/stream-browserify'),
-      buffer: resolve(__dirname, 'node_modules/buffer'),
+      'stream': 'stream-browserify',
+      'buffer': 'buffer',
+      'util': 'util',
+      'events': 'events',
     }
   },
   define: {
+    global: 'globalThis',
     'process.env': {},
-    'global': {},
-    'Buffer': ['buffer', 'Buffer'],
-  },
-  optimizeDeps: {
+    'process.env.NODE_ENV': JSON.stringify(process.env.NODE_ENV || 'development'),
+  },  optimizeDeps: {
+    include: ['buffer', 'stream-browserify', 'util', 'events'],
+    exclude: ['firebase'],
     esbuildOptions: {
-      target: 'es2020'
+      target: 'es2020',
+      define: {
+        global: 'globalThis',
+      },
+      plugins: [
+        NodeGlobalsPolyfillPlugin({
+          process: true,
+          buffer: true,
+        }),
+        NodeModulesPolyfillPlugin()
+      ]
     },
+  },
+  build: {
+    rollupOptions: {
+      external: (id) => {
+        if (id.includes('crypto')) return false;
+        return false;
+      }
+    }
   }
 })

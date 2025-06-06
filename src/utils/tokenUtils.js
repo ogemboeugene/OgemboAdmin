@@ -76,3 +76,107 @@ export const getTokenTimeRemaining = (token) => {
     return -1;
   }
 };
+
+/**
+ * Get access token from localStorage
+ * @returns {string|null} The access token or null if not found
+ */
+export const getAccessToken = () => {
+  return localStorage.getItem('access_token') || 
+         localStorage.getItem('authToken') || 
+         localStorage.getItem('token');
+};
+
+/**
+ * Get refresh token from localStorage
+ * @returns {string|null} The refresh token or null if not found
+ */
+export const getRefreshToken = () => {
+  return localStorage.getItem('refresh_token');
+};
+
+/**
+ * Set tokens in localStorage
+ * @param {string} accessToken - The access token
+ * @param {string} refreshToken - The refresh token (optional)
+ */
+export const setTokens = (accessToken, refreshToken = null) => {
+  if (accessToken) {
+    localStorage.setItem('access_token', accessToken);
+    // Remove old token keys for consistency
+    localStorage.removeItem('authToken');
+    localStorage.removeItem('token');
+  }
+  
+  if (refreshToken) {
+    localStorage.setItem('refresh_token', refreshToken);
+  }
+};
+
+/**
+ * Clear all tokens from localStorage
+ */
+export const clearTokens = () => {
+  localStorage.removeItem('access_token');
+  localStorage.removeItem('authToken');
+  localStorage.removeItem('token');
+  localStorage.removeItem('refresh_token');
+};
+
+/**
+ * Check if access token exists
+ * @returns {boolean} True if token exists, false otherwise
+ */
+export const hasAccessToken = () => {
+  return !!getAccessToken();
+};
+
+/**
+ * Check if refresh token exists
+ * @returns {boolean} True if refresh token exists, false otherwise
+ */
+export const hasRefreshToken = () => {
+  return !!getRefreshToken();
+};
+
+/**
+ * Check if token should be refreshed (expires within 5 minutes)
+ * @param {string} token - The JWT token
+ * @returns {boolean} True if token should be refreshed
+ */
+export const shouldRefreshToken = (token) => {
+  const timeRemaining = getTokenTimeRemaining(token);
+  return timeRemaining > 0 && timeRemaining <= 5; // Refresh if expires within 5 minutes
+};
+
+/**
+ * Get user info from token
+ * @param {string} token - The JWT token
+ * @returns {object|null} User info from token payload
+ */
+export const getUserFromToken = (token) => {
+  try {
+    const decoded = decodeJWT(token);
+    if (!decoded) return null;
+    
+    return {
+      id: decoded.user_id || decoded.userId || decoded.sub,
+      email: decoded.email,
+      role: decoded.role,
+      name: decoded.name,
+      // Add any other fields your token contains
+    };
+  } catch (error) {
+    console.error('Error getting user from token:', error);
+    return null;
+  }
+};
+
+/**
+ * Format token for Authorization header
+ * @param {string} token - The access token
+ * @returns {string} Formatted authorization header value
+ */
+export const formatAuthHeader = (token) => {
+  return token ? `Bearer ${token}` : '';
+};

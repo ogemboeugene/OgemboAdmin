@@ -136,6 +136,81 @@ class FirebaseStorageService {
   }
 
   /**
+   * Upload a document file to Firebase Storage
+   * @param {File} file - The document file to upload (PDF, DOC, DOCX)
+   * @param {string} folder - The folder path in storage (e.g., 'resumes', 'documents')
+   * @param {string} fileName - Optional custom filename (will generate if not provided)
+   * @param {function} onProgress - Optional progress callback function
+   * @returns {Promise<string>} - Returns the download URL with access token
+   */
+  async uploadDocument(file, folder = 'documents', fileName = null, onProgress = null) {
+    try {
+      // TODO: Add authentication back when ready
+      // For now, proceed without authentication check
+      console.log('Starting document upload without authentication (temporary)');
+
+      // Validate file type for documents
+      if (!this.isValidDocumentType(file)) {
+        throw new Error('Invalid file type. Please upload a document file (PDF, DOC, DOCX).');
+      }
+
+      // Validate file size (max 10MB for documents)
+      if (file.size > 10 * 1024 * 1024) {
+        throw new Error('File size too large. Please upload a document smaller than 10MB.');
+      }
+
+      // Generate unique filename if not provided
+      const finalFileName = fileName || this.generateFileName(file.name);
+      
+      // Create storage reference
+      const storageRef = ref(storage, `${folder}/${finalFileName}`);
+      
+      console.log('Uploading document to Firebase Storage:', `${folder}/${finalFileName}`);
+      console.log('Storage bucket:', storage.app.options.storageBucket);
+      
+      // Upload file with progress tracking if callback provided
+      let uploadTask;
+      if (onProgress) {
+        uploadTask = uploadBytesResumable(storageRef, file);
+        
+        return new Promise((resolve, reject) => {
+          uploadTask.on('state_changed',
+            (snapshot) => {
+              // Calculate progress percentage
+              const progress = (snapshot.bytesTransferred / snapshot.totalBytes) * 100;
+              onProgress(progress);
+            },
+            (error) => {
+              console.error('Document upload failed:', error);
+              reject(this.handleUploadError(error));
+            },
+            async () => {
+              try {
+                // Upload completed successfully, get download URL
+                const downloadURL = await getDownloadURL(uploadTask.snapshot.ref);
+                console.log('Document upload successful, download URL:', downloadURL);
+                resolve(downloadURL);
+              } catch (error) {
+                reject(new Error('Failed to get download URL: ' + error.message));
+              }
+            }
+          );
+        });
+      } else {
+        // Simple upload without progress tracking
+        const snapshot = await uploadBytes(storageRef, file);
+        const downloadURL = await getDownloadURL(snapshot.ref);
+        console.log('Document upload successful, download URL:', downloadURL);
+        return downloadURL;
+      }
+      
+    } catch (error) {
+      console.error('Error uploading document:', error);
+      throw error;
+    }
+  }
+
+  /**
    * Generate a unique filename with timestamp and random string
    * @param {string} originalName - Original filename
    * @returns {string} - Unique filename
@@ -154,6 +229,20 @@ class FirebaseStorageService {
    */
   isValidImageType(file) {
     const allowedTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp'];
+    return allowedTypes.includes(file.type);
+  }
+
+  /**
+   * Validate if the file is a valid document type
+   * @param {File} file - File to validate
+   * @returns {boolean}
+   */
+  isValidDocumentType(file) {
+    const allowedTypes = [
+      'application/pdf',
+      'application/msword',
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+    ];
     return allowedTypes.includes(file.type);
   }
 

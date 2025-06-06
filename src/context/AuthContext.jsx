@@ -2,6 +2,8 @@ import React, { createContext, useContext, useState, useEffect } from 'react';
 import PropTypes from 'prop-types';
 import apiService from '../services/api/apiService';
 import { useNotification } from './NotificationContext';
+import { getAccessToken, getRefreshToken, setTokens, clearTokens, isTokenExpired } from '../utils/tokenUtils';
+import useTokenRefresh from '../hooks/useTokenRefresh';
 
 // Create the Authentication Context
 const AuthContext = createContext();
@@ -14,15 +16,16 @@ export const AuthProvider = ({ children }) => {
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState(null);
-  const { success, error: showError } = useNotification();  // Check if user is logged in on mount
+  const { success, error: showError } = useNotification();
+  const { startTokenMonitoring, stopTokenMonitoring } = useTokenRefresh();// Check if user is logged in on mount
   useEffect(() => {
     const checkAuthStatus = async () => {
       setIsLoading(true);
       setError(null);
       
       try {
-        // Check for token in localStorage
-        const token = localStorage.getItem('access_token');
+        // Check for token using utility function
+        const token = getAccessToken();
         
         if (!token) {
           setIsLoggedIn(false);
@@ -31,10 +34,45 @@ export const AuthProvider = ({ children }) => {
           return;
         }
         
-        // In a production environment, we should verify the token's validity
-        // by making an API call to a profile or verify-token endpoint
+        // Check if token is expired
+        if (isTokenExpired(token)) {
+          console.warn('🔄 Access token is expired, attempting refresh...');
+          
+          const refreshToken = getRefreshToken();
+          if (!refreshToken) {
+            console.error('🚨 No refresh token available');
+            clearTokens();
+            setIsLoggedIn(false);
+            setUser(null);
+            setIsLoading(false);
+            return;
+          }
+          
+          try {
+            const refreshResponse = await apiService.auth.refreshToken(refreshToken);
+            
+            if (refreshResponse.data && refreshResponse.data.success) {
+              const { access_token, refresh_token: newRefreshToken } = refreshResponse.data.data;
+              
+              // Update tokens using utility function
+              setTokens(access_token, newRefreshToken);
+              
+              console.log('✅ Token refreshed successfully during auth check');
+            } else {
+              throw new Error('Token refresh failed');
+            }
+          } catch (refreshError) {
+            console.error('❌ Token refresh failed during auth check:', refreshError);
+            clearTokens();
+            setIsLoggedIn(false);
+            setUser(null);
+            setIsLoading(false);
+            return;
+          }
+        }
+        
+        // Now try to get user profile with valid token
         try {
-          // Example: Get current user profile using the stored token
           const response = await apiService.profile.get();
           
           if (response.data && response.data.success) {
@@ -50,71 +88,37 @@ export const AuthProvider = ({ children }) => {
               profile: userData.profile,
               settings: userData.settings
             };
-            
-            setUser(formattedUser);
+              setUser(formattedUser);
             setIsLoggedIn(true);
+            
+            // Start token monitoring when valid user is detected
+            startTokenMonitoring();
           } else {
-            throw new Error('Invalid token');
+            throw new Error('Invalid token response');
           }
         } catch (apiError) {
-          console.error('Token validation failed:', apiError);
+          console.error('❌ Profile fetch failed during auth check:', apiError);
           
-          // If the token is expired, try to refresh it
+          // If we get another 401, the refresh didn't work or token is still invalid
           if (apiError.response && apiError.response.status === 401) {
-            const refreshToken = localStorage.getItem('refresh_token');
-              if (refreshToken) {
-              try {
-                const refreshResponse = await apiService.auth.refreshToken(refreshToken);
-                
-                if (refreshResponse.data && refreshResponse.data.success) {
-                  const { access_token } = refreshResponse.data.data;
-                  
-                  // Save new token
-                  localStorage.setItem('access_token', access_token);
-                  
-                  // Try to get user profile again with new token
-                  const retryResponse = await apiService.profile.get();
-                  
-                  if (retryResponse.data && retryResponse.data.success) {
-                    const userData = retryResponse.data.data.user;
-                    
-                    // Format user data for our context
-                    const formattedUser = {
-                      id: userData.id,
-                      email: userData.email,
-                      name: userData.profile ? `${userData.profile.firstName} ${userData.profile.lastName}` : userData.name,
-                      role: userData.role || 'user',
-                      avatar: userData.profile?.avatar,
-                      profile: userData.profile,
-                      settings: userData.settings
-                    };
-                    
-                    setUser(formattedUser);
-                    setIsLoggedIn(true);
-                    return;
-                  }
-                }
-              } catch (refreshError) {
-                console.error('Token refresh failed:', refreshError);
-              }
-            }
+            console.error('🚨 Profile fetch returned 401 - clearing tokens');
+            clearTokens();
           }
           
-          // If we got here, authentication failed
-          throw new Error('Authentication failed');
+          setIsLoggedIn(false);
+          setUser(null);
         }
-      } catch (error) {        console.error('Auth check failed:', error);
+      } catch (error) {
+        console.error('❌ Auth check failed:', error);
         setError('Authentication failed. Please log in again.');
-        // Clear stored tokens if validation fails
-        localStorage.removeItem('access_token');
-        localStorage.removeItem('refresh_token');
+        clearTokens();
         setIsLoggedIn(false);
         setUser(null);
       } finally {
         setIsLoading(false);
       }
     };
-    
+
     checkAuthStatus();
   }, []);
   // Login function
@@ -125,13 +129,11 @@ export const AuthProvider = ({ children }) => {
     try {
       // Call the real API endpoint
       const response = await apiService.auth.login(credentials);
-      
-      // Handle successful login based on expected response format
+        // Handle successful login based on expected response format
       if (response.data && response.data.success) {
         const { user, access_token, refresh_token } = response.data.data;
-          // Save tokens to localStorage
-        localStorage.setItem('access_token', access_token);
-        localStorage.setItem('refresh_token', refresh_token);
+          // Save tokens using utility function
+        setTokens(access_token, refresh_token);
         
         // Format user data for our context if needed
         const formattedUser = {
@@ -143,10 +145,12 @@ export const AuthProvider = ({ children }) => {
           profile: user.profile,
           settings: user.settings
         };
-        
-        // Update auth context state
+          // Update auth context state
         setUser(formattedUser);
         setIsLoggedIn(true);
+        
+        // Start token monitoring
+        startTokenMonitoring();
         
         // Return success result
         return { 
@@ -273,25 +277,21 @@ export const AuthProvider = ({ children }) => {
   const forceLogout = () => {
     console.log('🚨 Force logout initiated');
     
-    // Clear all possible token storage locations
-    localStorage.removeItem('access_token');
-    localStorage.removeItem('refresh_token');
-    localStorage.removeItem('authToken');
-    localStorage.removeItem('token');
+    // Clear all tokens using utility function
+    clearTokens();
+    
+    // Clear other possible storage locations
     localStorage.removeItem('user');
+    sessionStorage.clear();
     
-    // Clear session storage as well
-    sessionStorage.removeItem('access_token');
-    sessionStorage.removeItem('refresh_token');
-    sessionStorage.removeItem('authToken');
-    sessionStorage.removeItem('token');
-    sessionStorage.removeItem('user');
-    
-    // Reset all auth state
+  // Reset all auth state
     setUser(null);
     setIsLoggedIn(false);
     setIsLoading(false);
     setError(null);
+    
+    // Stop token monitoring
+    stopTokenMonitoring();
     
     console.log('🧹 Force logout completed - all data cleared');
   };
@@ -299,25 +299,23 @@ export const AuthProvider = ({ children }) => {
   // Logout function
   const logout = async () => {
     setIsLoading(true);
-    
-    try {
+      try {
       console.log('🚪 Starting logout process...');
       
-      // First, clear local data immediately for security
-      localStorage.removeItem('access_token');
-      localStorage.removeItem('refresh_token');
-      localStorage.removeItem('authToken'); // Clean up any legacy tokens
-      localStorage.removeItem('token'); // Clean up any other token variants
+      // First, clear local data immediately for security using utility function
+      clearTokens();
       localStorage.removeItem('user'); // Clear user data
       
       // Clear session storage as well
       sessionStorage.clear();
       
       console.log('🧹 Local storage cleared');
-      
-      // Reset auth state immediately
+        // Reset auth state immediately
       setUser(null);
       setIsLoggedIn(false);
+      
+      // Stop token monitoring
+      stopTokenMonitoring();
       
       console.log('🔄 Auth state reset');
       
@@ -379,39 +377,40 @@ export const AuthProvider = ({ children }) => {
     } finally {
       setIsLoading(false);
     }  };
-
   // Manual refresh token function
   const refreshTokens = async () => {
     setIsLoading(true);
     setError(null);
     
     try {
-      const refreshToken = localStorage.getItem('refresh_token');
+      const refreshToken = getRefreshToken();
       
       if (!refreshToken) {
         throw new Error('No refresh token available');
       }
       
-      const response = await apiService.auth.refresh(refreshToken);
+      console.log('🔄 Manual token refresh requested');
+      const response = await apiService.auth.refreshToken(refreshToken);
       
       if (response.data && response.data.success) {
-        const { access_token } = response.data.data;
+        const { access_token, refresh_token: newRefreshToken } = response.data.data;
         
-        // Update stored token
-        localStorage.setItem('access_token', access_token);
+        // Update stored tokens using utility function
+        setTokens(access_token, newRefreshToken);
         
+        console.log('✅ Manual token refresh successful');
         return { success: true, message: 'Token refreshed successfully' };
       } else {
         throw new Error('Token refresh failed');
       }
     } catch (error) {
-      console.error('Token refresh failed:', error);
+      console.error('❌ Manual token refresh failed:', error);
       
-      // Clear tokens and logout user
-      localStorage.removeItem('access_token');
-      localStorage.removeItem('refresh_token');
+      // Clear tokens and logout user using utility function
+      clearTokens();
       setUser(null);
       setIsLoggedIn(false);
+      stopTokenMonitoring();
       
       const errorMessage = 'Session expired. Please log in again.';
       setError(errorMessage);
@@ -421,18 +420,46 @@ export const AuthProvider = ({ children }) => {
     } finally {
       setIsLoading(false);
     }
+  };  // Verify token validity and refresh if needed
+  const verifyToken = async (enforceRefresh = false) => {
+    try {
+      const token = getAccessToken();
+      
+      if (!token) {
+        return { valid: false, message: 'No token found' };
+      }
+      
+      // Check if token is expired or enforce refresh is true
+      if (isTokenExpired(token) || enforceRefresh) {
+        console.log('🔍 Token verification: Token needs refresh');
+        const result = await refreshTokens();
+        return { 
+          valid: result.success, 
+          refreshed: result.success,
+          message: result.message || result.error
+        };
+      }
+      
+      return { valid: true, refreshed: false, message: 'Token is valid' };
+    } catch (error) {
+      console.error('❌ Token verification failed:', error);
+      return { valid: false, refreshed: false, message: error.message };
+    }
   };
-    // Context value
+    
+  // Context value
   const value = {
     user,
     isLoggedIn,
-    isLoading,    error,
+    isLoading,
+    error,
     login,
     signup,
     logout,
     forceLogout,
     updateProfile,
     refreshTokens,
+    verifyToken,
   };
   
   return (

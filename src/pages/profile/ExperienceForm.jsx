@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Link, useNavigate, useParams, useLocation } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
@@ -10,273 +10,112 @@ import {
   FaPlus, 
   FaTimes, 
   FaTrash, 
+  FaEdit, 
   FaSave, 
   FaExclamationCircle, 
   FaCheckCircle, 
   FaArrowLeft,
   FaInfoCircle,
-  FaGlobe,
-  FaEdit,
-  FaEye,
-  FaSearch,
-  FaFilter,
-  FaSort,
-  FaChevronDown,
-  FaChevronRight
+  FaGlobe
 } from 'react-icons/fa';
-import { formatDate, truncateText } from '../../utils/formatters';
+import apiService from '../../services/api/apiService';
 
 const ExperienceForm = ({ editMode = false, readOnly = false }) => {
   const navigate = useNavigate();
   const { id } = useParams();
   const location = useLocation();
-  const isListView = location.pathname === '/experience';
-  
-  // Form data state
+    // Form data state
   const [formData, setFormData] = useState({
-    title: '',
     company: '',
+    position: '',
     location: '',
-    employmentType: 'full-time',
     startDate: '',
     endDate: '',
     current: false,
     description: '',
-    achievements: [],
-    technologies: [],
-    companyWebsite: '',
+    companyUrl: '',
     companyLogo: '',
-    remote: false
+    employmentType: 'full-time',
+    remote: false,
+    skills: [],
+    achievements: []
   });
-  
-  // List view states
-  const [experiences, setExperiences] = useState([]);
-  const [filteredExperiences, setFilteredExperiences] = useState([]);
-  const [searchQuery, setSearchQuery] = useState('');
-  const [sortBy, setSortBy] = useState('startDate');
-  const [sortDirection, setSortDirection] = useState('desc');
-  const [showFilters, setShowFilters] = useState(false);
-  const [employmentTypeFilter, setEmploymentTypeFilter] = useState('all');
-  const [expandedExperience, setExpandedExperience] = useState(null);
-  const [confirmDelete, setConfirmDelete] = useState(null);
-  
-  // UI states
+    // UI states
   const [errors, setErrors] = useState({});
-  const [isLoading, setIsLoading] = useState(isListView || editMode);
+  const [isLoading, setIsLoading] = useState(editMode && !!id);
   const [isSaving, setIsSaving] = useState(false);
   const [isDirty, setIsDirty] = useState(false);
   const [achievementInput, setAchievementInput] = useState('');
-  const [technologyInput, setTechnologyInput] = useState('');
+  const [skillInput, setSkillInput] = useState('');
   const [showSuccessMessage, setShowSuccessMessage] = useState(false);
   const [showErrorMessage, setShowErrorMessage] = useState(false);
-  const [errorMessage, setErrorMessage] = useState('');
-  
-  // Refs
-  const filterPanelRef = useRef(null);
-  const searchInputRef = useRef(null);
-  
-  // Fetch experiences data for list view
+  const [errorMessage, setErrorMessage] = useState('');  // Fetch experience data if in edit mode
   useEffect(() => {
-    if (isListView) {
-      setIsLoading(true);
-      
-      // Simulate API call to fetch experiences
-      setTimeout(() => {
-        // Sample data for list view
-        const experiencesData = [
-          {
-            id: 1,
-            title: 'Senior Frontend Developer',
-            company: 'TechInnovate Solutions',
-            location: 'Nairobi, Kenya',
-            employmentType: 'full-time',
-            startDate: '2020-06-01',
-            endDate: '',
-            current: true,
-            description: 'Leading the frontend development team in building modern web applications using React, Redux, and TypeScript. Implementing responsive designs and ensuring cross-browser compatibility.',
-            achievements: [
-              'Reduced page load time by 40% through code optimization and lazy loading techniques',
-              'Implemented a component library that increased development speed by 30%',
-              'Led a team of 5 developers to successfully deliver 3 major projects ahead of schedule'
-            ],
-            technologies: ['React', 'Redux', 'TypeScript', 'SCSS', 'Jest', 'Webpack'],
-            companyWebsite: 'https://techinnovate.example.com',
-            companyLogo: '/assets/company.png',
-            remote: true
-          },
-          {
-            id: 2,
-            title: 'Frontend Developer',
-            company: 'Digital Crafters',
-            location: 'Remote',
-            employmentType: 'contract',
-            startDate: '2018-03-15',
-            endDate: '2020-05-30',
-            current: false,
-            description: 'Developed responsive web applications for clients in various industries. Worked with a team of designers and backend developers to deliver high-quality products.',
-            achievements: [
-              'Built and maintained over 10 client websites using modern frontend technologies',
-              'Improved website accessibility scores by an average of 35%',
-              'Implemented automated testing that caught 95% of UI bugs before deployment'
-            ],
-            technologies: ['JavaScript', 'React', 'CSS3', 'HTML5', 'Git', 'Figma'],
-            companyWebsite: 'https://digitalcrafters.example.com',
-            companyLogo: '/assets/company.png',
-            remote: true
-          },
-          {
-            id: 3,
-            title: 'Web Developer Intern',
-            company: 'InnoTech Startups',
-            location: 'Nairobi, Kenya',
-            employmentType: 'internship',
-            startDate: '2017-06-01',
-            endDate: '2018-02-28',
-            current: false,
-            description: 'Assisted the development team in building and maintaining web applications. Gained hands-on experience with frontend and backend technologies.',
-            achievements: [
-              'Developed a dashboard for internal use that improved team productivity by 20%',
-              'Contributed to the company blog with technical articles on web development',
-              'Participated in code reviews and improved coding standards'
-            ],
-            technologies: ['JavaScript', 'jQuery', 'PHP', 'MySQL', 'Bootstrap'],
-            companyWebsite: 'https://innotech.example.com',
-            companyLogo: '/assets/company.png',
-            remote: false
-          }
-        ];
-        
-        setExperiences(experiencesData);
-        setIsLoading(false);
-      }, 1000);
-    }
-  }, [isListView]);
-  
-  // Apply filters and sorting to experiences
-  useEffect(() => {
-    if (isListView && experiences.length > 0) {
-      let result = [...experiences];
-      
-      // Apply search filter
-      if (searchQuery) {
-        const query = searchQuery.toLowerCase();
-        result = result.filter(exp => 
-          exp.title.toLowerCase().includes(query) || 
-          exp.company.toLowerCase().includes(query) ||
-          exp.description.toLowerCase().includes(query) ||
-          exp.technologies.some(tech => tech.toLowerCase().includes(query))
-        );
-      }
-      
-      // Apply employment type filter
-      if (employmentTypeFilter !== 'all') {
-        result = result.filter(exp => exp.employmentType === employmentTypeFilter);
-      }
-      
-      // Apply sorting
-      result.sort((a, b) => {
-        let comparison = 0;
-        
-        switch (sortBy) {
-          case 'startDate':
-            comparison = new Date(a.startDate) - new Date(b.startDate);
-            break;
-          case 'company':
-            comparison = a.company.localeCompare(b.company);
-            break;
-          case 'title':
-            comparison = a.title.localeCompare(b.title);
-            break;
-          default:
-            comparison = 0;
-        }
-        
-        return sortDirection === 'asc' ? comparison : -comparison;
-      });
-      
-      setFilteredExperiences(result);
-    }
-  }, [isListView, experiences, searchQuery, employmentTypeFilter, sortBy, sortDirection]);
-  
-  // Fetch experience data if in edit mode
-  useEffect(() => {
+    // Reset initial form data when switching between create/edit modes
+    setInitialFormData(null);
+    setIsDirty(false);
+    
     if (editMode && id) {
-      setIsLoading(true);
+      const fetchExperience = async () => {
+        try {
+          setIsLoading(true);
+          
+          const response = await apiService.experience.getById(id);
+          const experienceData = response.data?.data?.experience;
+            if (experienceData) {
+            setFormData({
+              company: experienceData.company || '',
+              position: experienceData.position || '',
+              location: experienceData.location || '',
+              startDate: experienceData.startDate || '',
+              endDate: experienceData.endDate || '',
+              current: experienceData.current === 1,
+              description: experienceData.description || '',
+              companyUrl: experienceData.companyUrl || '',
+              companyLogo: experienceData.companyLogo || '',
+              employmentType: experienceData.employmentType || 'full-time',
+              remote: experienceData.remote === 1,
+              skills: experienceData.skills || [],
+              achievements: experienceData.achievements || []
+            });
+          }
+        } catch (error) {
+          console.error('Error fetching experience:', error);
+          setErrorMessage('Failed to load experience data. Please try again.');
+          setShowErrorMessage(true);
+        } finally {
+          setIsLoading(false);
+        }
+      };
       
-      // Simulate API call to fetch experience data
-      setTimeout(() => {
-        // Sample data for edit mode
-        const experienceData = {
-          title: 'Senior Frontend Developer',
-          company: 'TechInnovate Solutions',
-          location: 'Nairobi, Kenya',
-          employmentType: 'full-time',
-          startDate: '2020-06-01',
-          endDate: '',
-          current: true,
-          description: 'Leading the frontend development team in building modern web applications using React, Redux, and TypeScript. Implementing responsive designs and ensuring cross-browser compatibility.',
-          achievements: [
-            'Reduced page load time by 40% through code optimization and lazy loading techniques',
-            'Implemented a component library that increased development speed by 30%',
-            'Led a team of 5 developers to successfully deliver 3 major projects ahead of schedule'
-          ],
-          technologies: ['React', 'Redux', 'TypeScript', 'SCSS', 'Jest', 'Webpack'],
-          companyWebsite: 'https://techinnovate.example.com',
-          companyLogo: '/assets/company-logo.png',
-          remote: true
-        };
-        
-        setFormData(experienceData);
-        setIsLoading(false);
-      }, 1000);
+      fetchExperience();
+    } else {
+      // For create mode, set loading to false immediately
+      setIsLoading(false);
+    }}, [editMode, id]);
+
+  // Track initial form data to compare against for dirty checking
+  const [initialFormData, setInitialFormData] = useState(null);
+
+  // Set initial form data after loading is complete
+  useEffect(() => {
+    if (!isLoading && initialFormData === null) {
+      setInitialFormData(JSON.stringify(formData));
     }
-  }, [editMode, id]);
-  
-  // Close filter panel when clicking outside
+  }, [isLoading, formData, initialFormData]);
+
+  // Mark form as dirty when changes are made (compare against initial data)
   useEffect(() => {
-    const handleClickOutside = (event) => {
-      if (filterPanelRef.current && !filterPanelRef.current.contains(event.target) && 
-          !event.target.closest('.filter-toggle-btn')) {
-        setShowFilters(false);
-      }
-    };
-    
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, []);
-  
-  // Mark form as dirty when changes are made
-  useEffect(() => {
-    if (!isLoading && !isListView) {
-      setIsDirty(true);
+    if (initialFormData !== null && !isLoading) {
+      const currentFormData = JSON.stringify(formData);
+      setIsDirty(currentFormData !== initialFormData);
     }
-  }, [formData, isLoading, isListView]);
-  
-  // Handle keyboard shortcuts
-  useEffect(() => {
-    const handleKeyDown = (e) => {
-      // Alt + F to focus search in list view
-      if (isListView && e.altKey && e.key === 'f') {
-        e.preventDefault();
-        searchInputRef.current?.focus();
-      }
-      
-      // Alt + N to create new experience
-      if (e.altKey && e.key === 'n') {
-        e.preventDefault();
-        navigate('/experience/new');
-      }
-    };
-    
-    document.addEventListener('keydown', handleKeyDown);
-    return () => document.removeEventListener('keydown', handleKeyDown);
-  }, [isListView, navigate]);
-  
-  const validateForm = () => {
+  }, [formData, initialFormData, isLoading]);
+    const validateForm = () => {
     const newErrors = {};
     
-    if (!formData.title.trim()) {
-      newErrors.title = 'Job title is required';
+    if (!formData.position.trim()) {
+      newErrors.position = 'Position title is required';
     }
     
     if (!formData.company.trim()) {
@@ -295,8 +134,8 @@ const ExperienceForm = ({ editMode = false, readOnly = false }) => {
       newErrors.endDate = 'End date cannot be earlier than start date';
     }
     
-    if (formData.companyWebsite && !/^(https?:\/\/)?([\da-z.-]+)\.([a-z.]{2,6})([/\w .-]*)*\/?$/.test(formData.companyWebsite)) {
-      newErrors.companyWebsite = 'Website URL is invalid';
+    if (formData.companyUrl && !/^(https?:\/\/)?([\da-z.-]+)\.([a-z.]{2,6})([/\w .-]*)*\/?$/.test(formData.companyUrl)) {
+      newErrors.companyUrl = 'Website URL is invalid';
     }
     
     setErrors(newErrors);
@@ -342,26 +181,23 @@ const ExperienceForm = ({ editMode = false, readOnly = false }) => {
       ...prev,
       achievements: prev.achievements.filter((_, i) => i !== index)
     }));
-  };
-  
-  const addTechnology = () => {
-    if (technologyInput.trim() && !formData.technologies.includes(technologyInput.trim())) {
+  };  const addSkill = () => {
+    if (skillInput.trim() && !formData.skills.includes(skillInput.trim())) {
       setFormData(prev => ({
         ...prev,
-        technologies: [...prev.technologies, technologyInput.trim()]
+        skills: [...prev.skills, skillInput.trim()]
       }));
-      setTechnologyInput('');
+      setSkillInput('');
     }
   };
   
-  const removeTechnology = (tech) => {
+  const removeSkill = (skill) => {
     setFormData(prev => ({
       ...prev,
-      technologies: prev.technologies.filter(t => t !== tech)
+      skills: prev.skills.filter(s => s !== skill)
     }));
   };
-  
-  const handleSubmit = async (e) => {
+    const handleSubmit = async (e) => {
     e.preventDefault();
     
     if (!validateForm()) {
@@ -376,26 +212,38 @@ const ExperienceForm = ({ editMode = false, readOnly = false }) => {
     }
     
     setIsSaving(true);
+    setErrorMessage('');
+    setShowErrorMessage(false);
     
     try {
-      // Simulate API call
-      await new Promise(resolve => setTimeout(resolve, 1500));
+      // Prepare data for API
+      const experienceData = {
+        ...formData,
+        current: formData.current ? 1 : 0,
+        endDate: formData.current ? null : formData.endDate
+      };
+      
+      let response;
+      if (editMode && id) {
+        response = await apiService.experience.update(id, experienceData);
+      } else {
+        response = await apiService.experience.create(experienceData);
+      }
       
       // Show success message
       setShowSuccessMessage(true);
       setIsDirty(false);
       
-      // Hide success message after 3 seconds
+      // Hide success message and navigate after 3 seconds
       setTimeout(() => {
         setShowSuccessMessage(false);
-        
-        // Navigate back to experience list
         navigate('/experience');
       }, 3000);
+      
     } catch (error) {
       console.error('Error saving experience:', error);
+      setErrorMessage(error.response?.data?.message || 'Failed to save experience. Please try again.');
       setShowErrorMessage(true);
-      setErrorMessage('Failed to save experience. Please try again.');
       
       // Hide error message after 5 seconds
       setTimeout(() => {
@@ -403,136 +251,8 @@ const ExperienceForm = ({ editMode = false, readOnly = false }) => {
       }, 5000);
     } finally {
       setIsSaving(false);
-    }
-  };
-  
-  // Toggle sort direction
-  const toggleSortDirection = () => {
-    setSortDirection(prev => prev === 'asc' ? 'desc' : 'asc');
-  };
-  
-    // Handle sort change
-  const handleSortChange = (field) => {
-    if (sortBy === field) {
-      toggleSortDirection();
-    } else {
-      setSortBy(field);
-      setSortDirection('desc');
-    }
-  };
-  
-  // Toggle expanded experience
-  const toggleExpandExperience = (id) => {
-    setExpandedExperience(prev => prev === id ? null : id);
-  };
-  
-  // Handle delete confirmation
-  const handleDeleteClick = (id) => {
-    setConfirmDelete(id);
-  };
-  
-  // Confirm delete experience
-  const confirmDeleteExperience = async (id) => {
-    setIsLoading(true);
-    
-    try {
-      // Simulate API call
-      await new Promise(resolve => setTimeout(resolve, 800));
-      
-      // Remove from state
-      setExperiences(prev => prev.filter(exp => exp.id !== id));
-      setConfirmDelete(null);
-      
-      // Show success message
-      setShowSuccessMessage(true);
-      setTimeout(() => setShowSuccessMessage(false), 3000);
-    } catch (error) {
-      console.error('Error deleting experience:', error);
-      setShowErrorMessage(true);
-      setErrorMessage('Failed to delete experience. Please try again.');
-      setTimeout(() => setShowErrorMessage(false), 5000);
-    } finally {
-      setIsLoading(false);
-    }
-  };
-  
-  // Get employment type label
-  const getEmploymentTypeLabel = (type) => {
-    const types = {
-      'full-time': 'Full-time',
-      'part-time': 'Part-time',
-      'contract': 'Contract',
-      'freelance': 'Freelance',
-      'internship': 'Internship',
-      'volunteer': 'Volunteer'
-    };
-    
-    return types[type] || type;
-  };
-  
-  // Get employment type badge class
-  const getEmploymentTypeBadgeClass = (type) => {
-    const classes = {
-      'full-time': 'badge-primary',
-      'part-time': 'badge-secondary',
-      'contract': 'badge-info',
-      'freelance': 'badge-warning',
-      'internship': 'badge-success',
-      'volunteer': 'badge-dark'
-    };
-    
-    return classes[type] || 'badge-default';
-  };
-  
-  // Format date range
-  const formatDateRange = (startDate, endDate, current) => {
-    const start = new Date(startDate).toLocaleDateString('en-US', { 
-      month: 'short', 
-      year: 'numeric' 
-    });
-    
-    if (current) {
-      return `${start} - Present`;
-    }
-    
-    if (endDate) {
-      const end = new Date(endDate).toLocaleDateString('en-US', { 
-        month: 'short', 
-        year: 'numeric' 
-      });
-      return `${start} - ${end}`;
-    }
-    
-    return start;
-  };
-  
-  // Calculate duration
-  const calculateDuration = (startDate, endDate, current) => {
-    const start = new Date(startDate);
-    const end = current ? new Date() : new Date(endDate);
-    
-    const diffYears = end.getFullYear() - start.getFullYear();
-    const diffMonths = end.getMonth() - start.getMonth();
-    
-    let years = diffYears;
-    let months = diffMonths;
-    
-    if (diffMonths < 0) {
-      years--;
-      months = 12 + diffMonths;
-    }
-    
-    const yearText = years > 0 ? `${years} ${years === 1 ? 'year' : 'years'}` : '';
-    const monthText = months > 0 ? `${months} ${months === 1 ? 'month' : 'months'}` : '';
-    
-    if (yearText && monthText) {
-      return `${yearText}, ${monthText}`;
-    }
-    
-    return yearText || monthText || 'Less than a month';
-  };
-  
-  // Render loading state
+    }  };
+    // Render loading state
   if (isLoading) {
     return (
       <div className="experience-loading">
@@ -541,353 +261,7 @@ const ExperienceForm = ({ editMode = false, readOnly = false }) => {
       </div>
     );
   }
-  
-  // Render list view
-  if (isListView) {
-    return (
-      <div className="experience-list-container">
-        {/* Header */}
-        <div className="experience-list-header">
-          <div className="header-left">
-            <h1>Work Experience</h1>
-            <p className="header-description">
-              Manage your professional work experience and career history
-            </p>
-          </div>
-          
-          <Link to="/experience/new" className="btn-primary">
-            <FaPlus /> Add Experience
-          </Link>
-        </div>
-        
-        {/* Controls */}
-        <div className="experience-controls">
-          <div className="search-container">
-            <FaSearch className="search-icon" />
-            <input
-              type="text"
-              placeholder="Search experiences..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              ref={searchInputRef}
-            />
-            {searchQuery && (
-              <button 
-                className="clear-search" 
-                onClick={() => setSearchQuery('')}
-                aria-label="Clear search"
-              >
-                &times;
-              </button>
-            )}
-          </div>
-          
-          <div className="filter-container">
-            <button 
-              className="filter-toggle-btn"
-              onClick={() => setShowFilters(!showFilters)}
-              aria-expanded={showFilters}
-            >
-              <FaFilter /> Filters
-              <FaChevronDown className={`chevron ${showFilters ? 'open' : ''}`} />
-            </button>
-            
-            <AnimatePresence>
-              {showFilters && (
-                <motion.div 
-                  className="filter-panel"
-                  ref={filterPanelRef}
-                  initial={{ opacity: 0, y: -10 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0, y: -10 }}
-                  transition={{ duration: 0.2 }}
-                >
-                  <div className="filter-group">
-                    <label>Employment Type</label>
-                    <div className="filter-options">
-                      <button 
-                        className={employmentTypeFilter === 'all' ? 'active' : ''}
-                        onClick={() => setEmploymentTypeFilter('all')}
-                      >
-                        All
-                      </button>
-                      <button 
-                        className={employmentTypeFilter === 'full-time' ? 'active' : ''}
-                        onClick={() => setEmploymentTypeFilter('full-time')}
-                      >
-                        Full-time
-                      </button>
-                      <button 
-                        className={employmentTypeFilter === 'part-time' ? 'active' : ''}
-                        onClick={() => setEmploymentTypeFilter('part-time')}
-                      >
-                        Part-time
-                      </button>
-                      <button 
-                        className={employmentTypeFilter === 'contract' ? 'active' : ''}
-                        onClick={() => setEmploymentTypeFilter('contract')}
-                      >
-                        Contract
-                      </button>
-                      <button 
-                        className={employmentTypeFilter === 'internship' ? 'active' : ''}
-                        onClick={() => setEmploymentTypeFilter('internship')}
-                      >
-                        Internship
-                      </button>
-                    </div>
-                  </div>
-                  
-                  <div className="filter-group">
-                    <label>Sort By</label>
-                    <div className="sort-options">
-                      <button 
-                        className={sortBy === 'startDate' ? 'active' : ''}
-                        onClick={() => handleSortChange('startDate')}
-                      >
-                        Date {sortBy === 'startDate' && (
-                          sortDirection === 'asc' ? <FaSort className="sort-icon asc" /> : <FaSort className="sort-icon desc" />
-                        )}
-                      </button>
-                      <button 
-                        className={sortBy === 'company' ? 'active' : ''}
-                        onClick={() => handleSortChange('company')}
-                      >
-                        Company {sortBy === 'company' && (
-                          sortDirection === 'asc' ? <FaSort className="sort-icon asc" /> : <FaSort className="sort-icon desc" />
-                        )}
-                      </button>
-                      <button 
-                        className={sortBy === 'title' ? 'active' : ''}
-                        onClick={() => handleSortChange('title')}
-                      >
-                        Job Title {sortBy === 'title' && (
-                          sortDirection === 'asc' ? <FaSort className="sort-icon asc" /> : <FaSort className="sort-icon desc" />
-                        )}
-                      </button>
-                    </div>
-                  </div>
-                  
-                  <div className="filter-actions">
-                    <button 
-                      className="btn-secondary"
-                      onClick={() => {
-                        setEmploymentTypeFilter('all');
-                        setSortBy('startDate');
-                        setSortDirection('desc');
-                      }}
-                    >
-                      Reset Filters
-                    </button>
-                  </div>
-                </motion.div>
-              )}
-            </AnimatePresence>
-          </div>
-        </div>
-        
-        {/* Experience List */}
-        {filteredExperiences.length === 0 ? (
-          <div className="empty-experience">
-            <FaBriefcase className="empty-icon" />
-            <h3>No work experience found</h3>
-            <p>
-              {searchQuery || employmentTypeFilter !== 'all' 
-                ? 'Try adjusting your filters or search query' 
-                : 'Add your first work experience to showcase your professional history'}
-            </p>
-            <Link to="/experience/new" className="btn-primary">
-              <FaPlus /> Add Experience
-            </Link>
-          </div>
-        ) : (
-          <div className="experience-cards-grid">
-            {filteredExperiences.map(experience => (
-              <motion.div 
-                key={experience.id} 
-                className="experience-card"
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.3 }}
-                layout
-              >
-                {/* Delete confirmation */}
-                {confirmDelete === experience.id && (
-                  <div className="delete-confirm">
-                    <p>Are you sure you want to delete this experience?</p>
-                    <div className="delete-actions">
-                      <button 
-                        className="btn-danger"
-                        onClick={() => confirmDeleteExperience(experience.id)}
-                      >
-                        Delete
-                      </button>
-                      <button 
-                        className="btn-secondary"
-                        onClick={() => setConfirmDelete(null)}
-                      >
-                        Cancel
-                      </button>
-                    </div>
-                  </div>
-                )}
-                
-                <div className="experience-card-content">
-                  <div className="experience-header">
-                    <div className="company-logo">
-                      {experience.companyLogo ? (
-                        <img src={experience.companyLogo} alt={experience.company} />
-                      ) : (
-                        <FaBuilding />
-                      )}
-                    </div>
-                    
-                    <div className="experience-info">
-                      <h3>{experience.title}</h3>
-                      <div className="company-info">
-                        <span className="company-name">{experience.company}</span>
-                        <span className={`employment-type-badge ${getEmploymentTypeBadgeClass(experience.employmentType)}`}>
-                          {getEmploymentTypeLabel(experience.employmentType)}
-                        </span>
-                        {experience.remote && (
-                          <span className="remote-badge">
-                            <FaGlobe /> Remote
-                          </span>
-                        )}
-                      </div>
-                      
-                      <div className="experience-meta">
-                        <div className="date-range">
-                          <FaCalendarAlt />
-                          <span>{formatDateRange(experience.startDate, experience.endDate, experience.current)}</span>
-                          <span className="duration">
-                            ({calculateDuration(experience.startDate, experience.endDate, experience.current)})
-                          </span>
-                        </div>
-                        
-                        {experience.location && (
-                          <div className="location">
-                            <FaMapMarkerAlt />
-                            <span>{experience.location}</span>
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                    
-                    <div className="experience-actions">
-                      <Link 
-                        to={`/experience/${experience.id}/edit`} 
-                        className="btn-icon" 
-                        title="Edit Experience"
-                      >
-                        <FaEdit />
-                      </Link>
-                      <button 
-                        className="btn-icon delete" 
-                        onClick={() => handleDeleteClick(experience.id)}
-                        title="Delete Experience"
-                      >
-                        <FaTrash />
-                      </button>
-                    </div>
-                  </div>
-                  
-                  <div className="experience-summary">
-                    <p>{truncateText(experience.description, expandedExperience === experience.id ? 1000 : 150)}</p>
-                    
-                    {experience.description.length > 150 && (
-                      <button 
-                        className="expand-btn"
-                        onClick={() => toggleExpandExperience(experience.id)}
-                      >
-                        {expandedExperience === experience.id ? (
-                          <>Show Less <FaChevronDown className="expand-icon" /></>
-                        ) : (
-                          <>Show More <FaChevronRight className="expand-icon" /></>
-                        )}
-                      </button>
-                    )}
-                  </div>
-                  
-                  <AnimatePresence>
-                    {expandedExperience === experience.id && (
-                      <motion.div 
-                        className="experience-details"
-                        initial={{ opacity: 0, height: 0 }}
-                        animate={{ opacity: 1, height: 'auto' }}
-                        exit={{ opacity: 0, height: 0 }}
-                        transition={{ duration: 0.3 }}
-                      >
-                        {experience.achievements.length > 0 && (
-                          <div className="achievements-section">
-                            <h4>Key Achievements</h4>
-                            <ul className="achievements-list">
-                              {experience.achievements.map((achievement, index) => (
-                                <li key={index}>{achievement}</li>
-                              ))}
-                            </ul>
-                          </div>
-                        )}
-                        
-                        {experience.technologies.length > 0 && (
-                          <div className="technologies-section">
-                            <h4>Technologies Used</h4>
-                            <div className="technologies-list">
-                              {experience.technologies.map((tech, index) => (
-                                <span key={index} className="technology-tag">{tech}</span>
-                              ))}
-                            </div>
-                          </div>
-                        )}
-                        
-                        {experience.companyWebsite && (
-                          <div className="company-website">
-                            <a href={experience.companyWebsite} target="_blank" rel="noopener noreferrer" className="website-link">
-                              <FaLink /> Visit Company Website
-                            </a>
-                          </div>
-                        )}
-                      </motion.div>
-                    )}
-                  </AnimatePresence>
-                </div>
-              </motion.div>
-            ))}
-          </div>
-        )}
-        
-        {/* Success/Error Messages */}
-        <AnimatePresence>
-          {showSuccessMessage && (
-            <motion.div 
-              className="message success-message"
-              initial={{ opacity: 0, y: -20 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -20 }}
-              transition={{ duration: 0.3 }}
-            >
-              <FaCheckCircle />
-              <span>Experience successfully updated</span>
-            </motion.div>
-          )}
-          
-          {showErrorMessage && (
-            <motion.div 
-              className="message error-message"
-              initial={{ opacity: 0, y: -20 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -20 }}
-              transition={{ duration: 0.3 }}
-            >
-              <FaExclamationCircle />
-              <span>{errorMessage}</span>
-            </motion.div>
-          )}
-        </AnimatePresence>
-      </div>
-    );
-  }
-  
+
   // Render form view (add/edit)
   return (
     <div className="experience-form-container">
@@ -910,24 +284,23 @@ const ExperienceForm = ({ editMode = false, readOnly = false }) => {
       <form className="experience-form" onSubmit={handleSubmit}>
         <div className="form-section">
           <h2 className="section-title">Basic Information</h2>
-          
-          <div className="form-group">
-            <label htmlFor="title">Job Title <span className="required">*</span></label>
+            <div className="form-group">
+            <label htmlFor="position">Position Title <span className="required">*</span></label>
             <input
               type="text"
-              id="title"
-              name="title"
-              value={formData.title}
+              id="position"
+              name="position"
+              value={formData.position}
               onChange={handleChange}
               placeholder="e.g. Senior Frontend Developer"
               disabled={readOnly}
-              className={errors.title ? 'error' : ''}
-              aria-invalid={errors.title ? 'true' : 'false'}
-              aria-describedby={errors.title ? 'title-error' : undefined}
+              className={errors.position ? 'error' : ''}
+              aria-invalid={errors.position ? 'true' : 'false'}
+              aria-describedby={errors.position ? 'position-error' : undefined}
             />
-            {errors.title && (
-              <div id="title-error" className="error-message">
-                <FaExclamationCircle /> {errors.title}
+            {errors.position && (
+              <div id="position-error" className="error-message">
+                <FaExclamationCircle /> {errors.position}
               </div>
             )}
           </div>
@@ -1128,31 +501,29 @@ const ExperienceForm = ({ editMode = false, readOnly = false }) => {
             </div>
           </div>
         </div>
-        
-        <div className="form-section">
-          <h2 className="section-title">Technologies & Additional Information</h2>
+          <div className="form-section">
+          <h2 className="section-title">Skills & Additional Information</h2>
           
           <div className="form-group">
-            <label htmlFor="technologyInput">Technologies Used</label>
+            <label htmlFor="skillInput">Skills & Technologies Used</label>
             {!readOnly && (
-              <div className="input-with-button">
-                <input
-                  type="text"
-                  id="technologyInput"
-                  value={technologyInput}
-                  onChange={(e) => setTechnologyInput(e.target.value)}
+              <div className="input-with-button">                  <input
+                    type="text"
+                    id="skillInput"
+                    value={skillInput}
+                    onChange={(e) => setSkillInput(e.target.value)}
                   placeholder="Add a technology or skill"
                   onKeyDown={(e) => {
                     if (e.key === 'Enter') {
                       e.preventDefault();
-                      addTechnology();
+                      addSkill();
                     }
                   }}
                 />
                 <button 
                   type="button" 
                   className="btn-add"
-                  onClick={addTechnology}
+                  onClick={addSkill}
                 >
                   Add
                 </button>
@@ -1160,22 +531,22 @@ const ExperienceForm = ({ editMode = false, readOnly = false }) => {
             )}
             
             <div className="technologies-container">
-              {formData.technologies.length === 0 ? (
+              {formData.skills.length === 0 ? (
                 <div className="empty-list-message">
                   <FaInfoCircle />
-                  <span>No technologies added yet. {!readOnly && 'Add technologies and skills used in this role.'}</span>
+                  <span>No skills added yet. {!readOnly && 'Add technologies and skills used in this role.'}</span>
                 </div>
               ) : (
                 <div className="technologies-list">
-                  {formData.technologies.map((tech, index) => (
+                  {formData.skills.map((skill, index) => (
                     <div key={index} className="technology-tag">
-                      <span>{tech}</span>
+                      <span>{skill}</span>
                       {!readOnly && (
                         <button 
                           type="button" 
                           className="tag-remove"
-                          onClick={() => removeTechnology(tech)}
-                          aria-label="Remove technology"
+                          onClick={() => removeSkill(skill)}
+                          aria-label="Remove skill"
                         >
                           &times;
                         </button>
@@ -1187,23 +558,22 @@ const ExperienceForm = ({ editMode = false, readOnly = false }) => {
             </div>
           </div>
           
-          <div className="form-group">
-            <label htmlFor="companyWebsite">Company Website</label>
+          <div className="form-group">            <label htmlFor="companyUrl">Company Website</label>
             <input
               type="url"
-              id="companyWebsite"
-              name="companyWebsite"
-              value={formData.companyWebsite}
+              id="companyUrl"
+              name="companyUrl"
+              value={formData.companyUrl}
               onChange={handleChange}
               placeholder="e.g. https://company.com"
               disabled={readOnly}
-              className={errors.companyWebsite ? 'error' : ''}
-              aria-invalid={errors.companyWebsite ? 'true' : 'false'}
-              aria-describedby={errors.companyWebsite ? 'companyWebsite-error' : undefined}
+              className={errors.companyUrl ? 'error' : ''}
+              aria-invalid={errors.companyUrl ? 'true' : 'false'}
+              aria-describedby={errors.companyUrl ? 'companyUrl-error' : undefined}
             />
-            {errors.companyWebsite && (
-              <div id="companyWebsite-error" className="error-message">
-                <FaExclamationCircle /> {errors.companyWebsite}
+            {errors.companyUrl && (
+              <div id="companyUrl-error" className="error-message">
+                <FaExclamationCircle /> {errors.companyUrl}
               </div>
             )}
           </div>
@@ -2167,52 +1537,7 @@ const ExperienceForm = ({ editMode = false, readOnly = false }) => {
           text-decoration: underline;
         }
         
-        /* Delete Confirmation */
-        .delete-confirm {
-          position: absolute;
-          top: 0;
-          left: 0;
-          right: 0;
-          bottom: 0;
-          background-color: rgba(255, 255, 255, 0.95);
-          display: flex;
-          flex-direction: column;
-          align-items: center;
-          justify-content: center;
-          padding: var(--spacing-lg);
-          z-index: 5;
-          text-align: center;
-        }
-        
-        .delete-confirm p {
-          font-size: var(--text-base);
-          font-weight: 600;
-          color: var(--gray-800);
-          margin-bottom: var(--spacing-md);
-        }
-        
-        .delete-actions {
-          display: flex;
-          gap: var(--spacing-md);
-        }
-        
-        .btn-danger {
-          padding: var(--spacing-sm) var(--spacing-lg);
-          background-color: var(--danger-color);
-          color: var(--white);
-          border: none;
-          border-radius: var(--border-radius);
-          font-size: var(--text-sm);
-          font-weight: 500;
-          cursor: pointer;
-          transition: var(--transition-fast);
-        }
-        
-        .btn-danger:hover {
-          background-color: #dc2626;
-        }
-        
-        /* Loading */
+        /* Delete Confirmation */        /* Loading */
         .experience-loading {
           display: flex;
           flex-direction: column;
@@ -2229,8 +1554,82 @@ const ExperienceForm = ({ editMode = false, readOnly = false }) => {
           border-top-color: var(--primary-color);
           animation: spin 1s linear infinite;
           margin-bottom: var(--spacing-md);
+        }        /* Dark Mode Support */
+        @media (prefers-color-scheme: dark) {
+          :root {
+            /* Dark mode dropdown specific variables */
+            --dropdown-bg-dark: #1f2937;
+            --dropdown-border-dark: #374151;
+            --dropdown-text-dark: #f9fafb;
+            --dropdown-option-hover-dark: #374151;
+            --dropdown-option-selected-dark: #4f46e5;
+            --dropdown-focus-ring-dark: rgba(79, 70, 229, 0.4);
+          }
+          
+          /* Employment Type Dropdown Dark Mode */
+          .form-group select#employmentType {
+            background-color: var(--dropdown-bg-dark) !important;
+            border-color: var(--dropdown-border-dark) !important;
+            color: var(--dropdown-text-dark) !important;
+          }
+          
+          .form-group select#employmentType:focus {
+            border-color: var(--dropdown-option-selected-dark) !important;
+            box-shadow: 0 0 0 3px var(--dropdown-focus-ring-dark) !important;
+          }
+          
+          .form-group select#employmentType:hover {
+            border-color: #6b7280 !important;
+          }
+          
+          .form-group select#employmentType option {
+            background-color: var(--dropdown-bg-dark) !important;
+            color: var(--dropdown-text-dark) !important;
+          }
+          
+          .form-group select#employmentType option:hover {
+            background-color: var(--dropdown-option-hover-dark) !important;
+          }
+          
+          .form-group select#employmentType option:checked {
+            background-color: var(--dropdown-option-selected-dark) !important;
+          }
+          
+          /* Date Input Dark Mode */
+          .form-group input[type="date"]#startDate,
+          .form-group input[type="date"]#endDate {
+            background-color: var(--dropdown-bg-dark) !important;
+            border-color: var(--dropdown-border-dark) !important;
+            color: var(--dropdown-text-dark) !important;
+            color-scheme: dark;
+          }
+          
+          .form-group input[type="date"]#startDate:focus,
+          .form-group input[type="date"]#endDate:focus {
+            border-color: var(--dropdown-option-selected-dark) !important;
+            box-shadow: 0 0 0 3px var(--dropdown-focus-ring-dark) !important;
+          }
+          
+          .form-group input[type="date"]#startDate:hover,
+          .form-group input[type="date"]#endDate:hover {
+            border-color: #6b7280 !important;
+          }
+          
+          /* Date picker calendar icon styling */
+          .form-group input[type="date"]#startDate::-webkit-calendar-picker-indicator,
+          .form-group input[type="date"]#endDate::-webkit-calendar-picker-indicator {
+            filter: invert(1);
+            cursor: pointer;
+          }
+          
+          /* Form labels in dark mode */
+          .form-group label[for="employmentType"],
+          .form-group label[for="startDate"],
+          .form-group label[for="endDate"] {
+            color: var(--dropdown-text-dark) !important;
+          }
         }
-        
+
         /* Responsive Styles */
         @media (max-width: 768px) {
           .experience-form-header {
@@ -2241,36 +1640,6 @@ const ExperienceForm = ({ editMode = false, readOnly = false }) => {
           .form-row {
             flex-direction: column;
             gap: var(--spacing-md);
-          }
-          
-          .experience-controls {
-            flex-direction: column;
-            align-items: stretch;
-          }
-          
-          .search-container {
-            max-width: none;
-          }
-          
-          .filter-panel {
-            width: 100%;
-            left: 0;
-            right: 0;
-          }
-          
-          .experience-header {
-            flex-direction: column;
-          }
-          
-          .company-logo {
-            width: 50px;
-            height: 50px;
-          }
-          
-          .experience-actions {
-            position: absolute;
-            top: var(--spacing-md);
-            right: var(--spacing-md);
           }
         }
       `}</style>

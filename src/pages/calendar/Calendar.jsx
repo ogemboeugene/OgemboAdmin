@@ -2,6 +2,8 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Link } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAuth } from '../../context/AuthContext';
+import { useNotification } from '../../context/NotificationContext';
+import apiService from '../../services/api/apiService';
 import { 
   FaCalendarAlt, 
   FaPlus, 
@@ -40,14 +42,15 @@ import {
   FaUserFriends,
   FaLink,
   FaMapMarkerAlt,
-  FaBell
+  FaBell,
+  FaGraduationCap
 } from 'react-icons/fa';
 import { formatRelativeTime } from '../../utils/formatters';
 
 const Calendar = () => {
   const { user } = useAuth();
-  
-  // State for calendar
+  const { success, error: showErrorNotification } = useNotification();
+    // State for calendar
   const [currentDate, setCurrentDate] = useState(new Date());
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [view, setView] = useState('month'); // 'month', 'week', 'day', 'agenda'
@@ -57,20 +60,26 @@ const Calendar = () => {
   const [selectedCategories, setSelectedCategories] = useState([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState(null);
   const [showEventModal, setShowEventModal] = useState(false);
   const [currentEvent, setCurrentEvent] = useState(null);
   const [showFilters, setShowFilters] = useState(false);
   const [showAddEventModal, setShowAddEventModal] = useState(false);
-  const [newEvent, setNewEvent] = useState({
+  const [isSubmitting, setIsSubmitting] = useState(false);  const [newEvent, setNewEvent] = useState({
     title: '',
     description: '',
-    start: new Date(),
-    end: new Date(new Date().setHours(new Date().getHours() + 1)),
-    category: 'meeting',
+    start_time: new Date(),
+    end_time: new Date(new Date().setHours(new Date().getHours() + 1)),
+    event_type: 'meeting',
     priority: 'medium',
-    project: '',
+    project_id: '',
+    task_id: '',
     location: '',
-    attendees: []
+    is_all_day: false,
+    attendees: [],
+    reminders: [{ minutes_before: 15, notification_type: 'in_app' }],
+    recurrence_rule: '',
+    color: '#8b5cf6'
   });
   
   // Refs
@@ -78,145 +87,134 @@ const Calendar = () => {
   const searchRef = useRef(null);
   const modalRef = useRef(null);
   const addEventModalRef = useRef(null);
-  
-  // Fetch events data
+  // Fetch events data function
+  const fetchEvents = async () => {
+    setIsLoading(true);
+    setError(null);
+    try {
+      console.log('📅 Fetching calendar events...');
+      const response = await apiService.calendar.getAll();
+      
+      let eventsData = [];
+        // Handle different response structures
+      if (response.data) {
+        if (response.data.data && response.data.data.events && Array.isArray(response.data.data.events)) {
+          // Handle nested structure: response.data.data.events
+          eventsData = response.data.data.events;
+        } else if (response.data.data && Array.isArray(response.data.data)) {
+          eventsData = response.data.data;
+        } else if (Array.isArray(response.data)) {
+          eventsData = response.data;
+        } else if (response.data.events && Array.isArray(response.data.events)) {
+          eventsData = response.data.events;
+        }
+      }      // Transform API data to frontend format
+      const transformedEvents = eventsData.map((event, index) => {
+        console.log('📅 Processing event:', { id: event.id, _id: event._id, event }); // Debug log
+        
+        // Store the original backend ID (even if undefined) and generate display ID
+        const originalBackendId = event.id || event._id;
+        let eventId = originalBackendId;
+        
+        // Generate a fallback display ID if the backend ID is invalid, but track that it's from backend
+        if (!eventId || eventId === 'undefined' || eventId === undefined || eventId === null || eventId === '') {
+          eventId = `backend-undefined-${Date.now()}-${index}-${Math.random().toString(36).substr(2, 9)}`;
+          console.log('⚠️ Generated fallback display ID for backend event with undefined ID:', eventId);
+        }
+        
+        const transformedEvent = {
+          id: eventId,
+          originalBackendId: originalBackendId, // Store original backend ID for API calls
+          isBackendEvent: true, // Mark as backend event regardless of ID validity
+          title: event.title || event.name || 'Untitled Event',
+          description: event.description || '',
+          start: new Date(event.startDate || event.start_date || event.start || event.date),
+          end: new Date(event.endDate || event.end_date || event.end || event.start_date || event.start || event.date),
+          category: event.category || event.type || event.event_type || 'general',
+          priority: event.priority || 'medium',
+          project: event.project || event.relatedProject || event.projectName || 'General',
+          completed: event.completed || event.status === 'completed' || event.is_completed || false,
+          location: event.location || '',
+          attendees: event.attendees || [],
+          color: event.color || getCategoryColor(event.category || event.type || event.event_type || 'general')
+        };
+        
+        console.log('📅 Transformed event:', transformedEvent.id, transformedEvent.title, 'Backend ID:', originalBackendId);
+        return transformedEvent;
+      });
+      
+      setEvents(transformedEvents);
+      
+      // Extract unique categories
+      const uniqueCategories = [...new Set(transformedEvents.map(event => event.category))];
+      setCategories(uniqueCategories);
+      setSelectedCategories(uniqueCategories);
+      
+      console.log('📅 Successfully fetched calendar events:', transformedEvents.length);
+      
+    } catch (error) {
+      console.error('❌ Error fetching calendar events:', error);
+      setError('Failed to load calendar events. Please try again.');        // Fallback to sample data if API fails
+      const fallbackEvents = [
+        {
+          id: 'sample-1',
+          originalBackendId: null,
+          isBackendEvent: false,
+          title: 'Sample Meeting',
+          description: 'This is a sample meeting event (API connection failed)',
+          start: new Date(),
+          end: new Date(new Date().getTime() + 60 * 60 * 1000),
+          category: 'meeting',
+          priority: 'medium',
+          project: 'Sample Project',
+          completed: false,
+          location: 'Conference Room A',
+          attendees: ['user@example.com'],
+          color: '#3b82f6'
+        },
+        {
+          id: 'sample-2',
+          originalBackendId: null,
+          isBackendEvent: false,
+          title: 'Project Deadline',
+          description: 'Important project deadline (API connection failed)',
+          start: new Date(new Date().getTime() + 24 * 60 * 60 * 1000),
+          end: new Date(new Date().getTime() + 25 * 60 * 60 * 1000),
+          category: 'deadline',
+          priority: 'high',
+          project: 'Sample Project',
+          completed: false,
+          location: 'Remote',
+          attendees: [],
+          color: '#ef4444'
+        },
+        {
+          id: 'sample-3',
+          originalBackendId: null,
+          isBackendEvent: false,
+          title: 'Code Review',
+          description: 'Weekly code review session (API connection failed)',
+          start: new Date(new Date().getTime() + 2 * 24 * 60 * 60 * 1000),
+          end: new Date(new Date().getTime() + 2 * 24 * 60 * 60 * 1000 + 60 * 60 * 1000),
+          category: 'review',
+          priority: 'medium',
+          project: 'Development',
+          completed: true,
+          location: 'Online',
+          attendees: ['dev1@example.com', 'dev2@example.com'],
+          color: '#6366f1'
+        }
+      ];
+        setEvents(fallbackEvents);
+      setCategories(['meeting', 'deadline', 'review']);
+      setSelectedCategories(['meeting', 'deadline', 'review']);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // Fetch events data on component mount
   useEffect(() => {
-    const fetchEvents = async () => {
-      setIsLoading(true);
-      try {
-        // Simulate API call
-        await new Promise(resolve => setTimeout(resolve, 1000));
-        
-        // Sample data
-        const sampleEvents = [
-          {
-            id: 1,
-            title: 'Project Deadline: MamaPesa',
-            description: 'Final delivery of the mobile wallet application',
-            start: new Date(new Date().getFullYear(), new Date().getMonth(), 15, 14, 0),
-            end: new Date(new Date().getFullYear(), new Date().getMonth(), 15, 16, 0),
-            category: 'deadline',
-            priority: 'high',
-            project: 'MamaPesa',
-            completed: false,
-            location: 'Remote',
-            attendees: ['John Doe', 'Jane Smith'],
-            color: '#ef4444'
-          },
-          {
-            id: 2,
-            title: 'Code Review: ShopOkoa',
-            description: 'Review pull requests for the e-commerce platform',
-            start: new Date(new Date().getFullYear(), new Date().getMonth(), 10, 10, 0),
-            end: new Date(new Date().getFullYear(), new Date().getMonth(), 10, 11, 30),
-            category: 'meeting',
-            priority: 'medium',
-            project: 'ShopOkoa',
-            completed: true,
-            location: 'Zoom Meeting',
-            attendees: ['Alex Johnson', 'Sarah Williams'],
-            color: '#3b82f6'
-          },
-          {
-            id: 3,
-            title: 'API Integration Planning',
-            description: 'Plan the integration of payment APIs for SokoBeauty',
-            start: new Date(new Date().getFullYear(), new Date().getMonth(), 5, 9, 0),
-            end: new Date(new Date().getFullYear(), new Date().getMonth(), 5, 12, 0),
-            category: 'planning',
-            priority: 'medium',
-            project: 'SokoBeauty',
-            completed: true,
-            location: 'Conference Room A',
-            attendees: ['Michael Brown', 'Emily Davis'],
-            color: '#8b5cf6'
-          },
-          {
-            id: 4,
-            title: 'DevPortal UI Implementation',
-            description: 'Implement the new dashboard UI components',
-            start: new Date(new Date().getFullYear(), new Date().getMonth(), new Date().getDate() + 2, 13, 0),
-            end: new Date(new Date().getFullYear(), new Date().getMonth(), new Date().getDate() + 5, 17, 0),
-            category: 'development',
-            priority: 'medium',
-            project: 'DevPortal',
-            completed: false,
-            location: 'Remote',
-            attendees: [],
-            color: '#10b981'
-          },
-          {
-            id: 5,
-            title: 'Client Meeting: KenyaFresh',
-            description: 'Discuss requirements for the new food delivery app',
-            start: new Date(new Date().getFullYear(), new Date().getMonth(), new Date().getDate(), 15, 0),
-            end: new Date(new Date().getFullYear(), new Date().getMonth(), new Date().getDate(), 16, 0),
-            category: 'meeting',
-            priority: 'high',
-            project: 'KenyaFresh',
-            completed: false,
-            location: 'Client Office',
-            attendees: ['Robert Wilson', 'Lisa Anderson', user?.profile?.firstName && user?.profile?.lastName ? `${user.profile.firstName} ${user.profile.lastName}` : 'Eugene Ogembo'],
-            color: '#f59e0b'
-          },
-          {
-            id: 6,
-            title: 'Database Schema Review',
-            description: 'Review and optimize database schema for MamaPesa',
-            start: new Date(new Date().getFullYear(), new Date().getMonth(), new Date().getDate() - 1, 11, 0),
-            end: new Date(new Date().getFullYear(), new Date().getMonth(), new Date().getDate() - 1, 12, 30),
-            category: 'review',
-            priority: 'low',
-            project: 'MamaPesa',
-            completed: true,
-            location: 'Remote',
-            attendees: ['John Doe'],
-            color: '#6366f1'
-          },
-          {
-            id: 7,
-            title: 'Weekly Team Standup',
-            description: 'Regular team standup meeting to discuss progress and blockers',
-            start: new Date(new Date().getFullYear(), new Date().getMonth(), new Date().getDate() + 1, 9, 0),
-            end: new Date(new Date().getFullYear(), new Date().getMonth(), new Date().getDate() + 1, 9, 30),
-            category: 'meeting',
-            priority: 'medium',
-            project: 'All Projects',
-            completed: false,
-            location: 'Google Meet',
-            attendees: ['Team Members'],
-            color: '#8b5cf6'
-          },
-          {
-            id: 8,
-            title: 'Learn GraphQL',
-            description: 'Self-study session on GraphQL for upcoming projects',
-            start: new Date(new Date().getFullYear(), new Date().getMonth(), 20, 13, 0),
-            end: new Date(new Date().getFullYear(), new Date().getMonth(), 20, 15, 0),
-            category: 'learning',
-            priority: 'low',
-            project: 'Personal Development',
-            completed: false,
-            location: 'Home Office',
-            attendees: [],
-            color: '#ec4899'
-          }
-        ];
-        
-        setEvents(sampleEvents);
-        
-        // Extract unique categories
-        const uniqueCategories = [...new Set(sampleEvents.map(event => event.category))];
-        setCategories(uniqueCategories);
-        setSelectedCategories(uniqueCategories);
-        
-      } catch (error) {
-        console.error('Error fetching events:', error);
-      } finally {
-        setIsLoading(false);
-      }
-    };
-    
     fetchEvents();
   }, []);
   
@@ -272,12 +270,104 @@ const Calendar = () => {
     const today = new Date();
     setCurrentDate(today);
     setSelectedDate(today);
-  };
-  
-  // Handle event click
-  const handleEventClick = (event) => {
-    setCurrentEvent(event);
-    setShowEventModal(true);
+  };  // Handle event click - fetch detailed event information
+  const handleEventClick = async (event) => {
+    try {
+      console.log('📅 Event clicked:', { 
+        id: event.id, 
+        title: event.title, 
+        originalBackendId: event.originalBackendId,
+        isBackendEvent: event.isBackendEvent,
+        fullEvent: event 
+      });
+      
+      setCurrentEvent(event); // Set the basic event data first
+      setShowEventModal(true);
+      
+      // Only fetch detailed info if we have a valid backend event
+      const shouldFetchDetails = event.isBackendEvent && 
+                                event.originalBackendId &&
+                                event.originalBackendId !== 'undefined' && 
+                                event.originalBackendId !== undefined && 
+                                event.originalBackendId !== null;
+      
+      // Also check for legacy events (events without the isBackendEvent flag)
+      const isLegacyBackendEvent = !event.isBackendEvent &&
+                                  event.id && 
+                                  event.id !== 'undefined' && 
+                                  event.id !== undefined && 
+                                  event.id !== null &&
+                                  typeof event.id === 'string' && 
+                                  !event.id.startsWith('sample-') && 
+                                  !event.id.startsWith('local-') &&
+                                  !event.id.startsWith('fallback-') &&
+                                  !event.id.startsWith('backend-undefined-');
+      
+      if (shouldFetchDetails || isLegacyBackendEvent) {
+        const fetchId = shouldFetchDetails ? event.originalBackendId : event.id;
+        
+        try {
+          // Fetch detailed event information from the API
+          console.log('📅 Fetching detailed event information for ID:', fetchId);
+          const response = await apiService.calendar.getById(fetchId);
+          
+          let detailedEvent;
+          if (response.data && response.data.data) {
+            detailedEvent = response.data.data;
+          } else if (response.data) {
+            detailedEvent = response.data;
+          } else {
+            throw new Error('Invalid response format');
+          }
+          
+          // Transform detailed API data to frontend format
+          const enrichedEvent = {
+            ...event, // Keep the existing event data as fallback
+            id: event.id, // Keep the display ID
+            originalBackendId: event.originalBackendId || detailedEvent.id, // Preserve backend tracking
+            isBackendEvent: event.isBackendEvent || true, // Mark as backend event
+            title: detailedEvent.title || event.title,
+            description: detailedEvent.description || event.description,
+            start: new Date(detailedEvent.start_time || detailedEvent.startDate || detailedEvent.start_date || event.start),
+            end: new Date(detailedEvent.end_time || detailedEvent.endDate || detailedEvent.end_date || event.end),
+            category: detailedEvent.event_type || detailedEvent.category || event.category,
+            priority: detailedEvent.priority || event.priority,
+            project: detailedEvent.project_id || detailedEvent.project || event.project,
+            task: detailedEvent.task_id || detailedEvent.task || event.task,
+            completed: detailedEvent.completed || event.completed,
+            location: detailedEvent.location || event.location,
+            attendees: detailedEvent.attendees || event.attendees || [],
+            color: detailedEvent.color || event.color,
+            isAllDay: detailedEvent.is_all_day || event.isAllDay,
+            recurrenceRule: detailedEvent.recurrence_rule || event.recurrenceRule,
+            reminders: detailedEvent.reminders || event.reminders || [],
+            // Additional detailed fields from API
+            projectDetails: detailedEvent.project_details || null,
+            taskDetails: detailedEvent.task_details || null,
+            attendeesWithStatus: detailedEvent.attendees || detailedEvent.attendees_with_status || [],
+            createdAt: detailedEvent.created_at ? new Date(detailedEvent.created_at) : null,
+            updatedAt: detailedEvent.updated_at ? new Date(detailedEvent.updated_at) : null,
+            createdBy: detailedEvent.created_by || null
+          };
+          
+          // Update the current event with detailed information
+          setCurrentEvent(enrichedEvent);
+          
+          console.log('✅ Event details fetched successfully:', enrichedEvent);
+          
+        } catch (detailError) {
+          console.error('❌ Error fetching event details (using basic event data):', detailError);
+          // Continue with basic event data - don't block the modal
+        }
+      } else {
+        console.log('📅 Using basic event data (local/sample event or invalid backend ID)');
+      }
+      
+    } catch (error) {
+      console.error('❌ Error in handleEventClick:', error);
+      // Don't show error to user, just use the basic event data
+      // The modal will still open with the basic information
+    }
   };
   
   // Toggle category selection
@@ -305,18 +395,58 @@ const Calendar = () => {
   // Toggle view
   const changeView = (newView) => {
     setView(newView);
-  };
-  
-  // Handle new event form changes
+  };  // Handle new event form changes
   const handleNewEventChange = (e) => {
-    const { name, value } = e.target;
-    setNewEvent(prev => ({
-      ...prev,
-      [name]: value
-    }));
+    const { name, value, type, checked } = e.target;
+    
+    // Handle checkbox inputs
+    if (type === 'checkbox') {
+      setNewEvent(prev => ({
+        ...prev,
+        [name]: checked
+      }));
+    } else {
+      // Handle integer fields that need conversion
+      if (name === 'project_id' || name === 'task_id') {
+        const convertedValue = value === '' ? null : parseInt(value, 10) || null;
+        setNewEvent(prev => ({
+          ...prev,
+          [name]: convertedValue
+        }));
+      } else {
+        setNewEvent(prev => ({
+          ...prev,
+          [name]: value
+        }));
+      }
+    }
   };
-  
-  // Handle date/time changes for new event
+
+  // Open add event modal with optional pre-selected date
+  const openAddEventModal = (selectedDate = null) => {
+    if (selectedDate) {
+      // Set the start time to the selected date at current time
+      const startTime = new Date(selectedDate);
+      startTime.setHours(new Date().getHours());
+      startTime.setMinutes(new Date().getMinutes());
+      
+      // Set end time to 1 hour later
+      const endTime = new Date(startTime);
+      endTime.setHours(endTime.getHours() + 1);
+      
+      setNewEvent(prev => ({
+        ...prev,
+        start_time: startTime,
+        end_time: endTime
+      }));
+      
+      // Also update the selected date
+      setSelectedDate(selectedDate);
+    }
+    
+    setShowAddEventModal(true);
+  };
+    // Handle date/time changes for new event
   const handleDateTimeChange = (e) => {
     const { name, value } = e.target;
     const [date, time] = value.split('T');
@@ -333,54 +463,454 @@ const Calendar = () => {
       [name]: newDateTime
     }));
   };
-  
   // Add new event
-  const handleAddEvent = (e) => {
+  const handleAddEvent = async (e) => {
     e.preventDefault();
+    setIsSubmitting(true);
+    setError(null);
     
-    const newEventWithId = {
-      ...newEvent,
-      id: events.length + 1,
-      color: getCategoryColor(newEvent.category),
-      completed: false
-    };
-    
-    setEvents([...events, newEventWithId]);
-    setShowAddEventModal(false);
-    setNewEvent({
-      title: '',
-      description: '',
-      start: new Date(),
-      end: new Date(new Date().setHours(new Date().getHours() + 1)),
-      category: 'meeting',
-      priority: 'medium',
-      project: '',
-      location: '',
-      attendees: []
-    });
-  };
-  
-  // Toggle event completion status
-  const toggleEventCompletion = () => {
+    try {
+      console.log('📅 Creating new calendar event...');
+      
+      // Prepare event data for API with correct field names
+      const eventData = {
+        title: newEvent.title,
+        description: newEvent.description,
+        start_time: newEvent.start_time.toISOString(),
+        end_time: newEvent.end_time.toISOString(),
+        event_type: newEvent.event_type,
+        priority: newEvent.priority,
+        project_id: newEvent.project_id,
+        task_id: newEvent.task_id,
+        location: newEvent.location,
+        is_all_day: newEvent.is_all_day,
+        attendees: newEvent.attendees,
+        reminders: newEvent.reminders,
+        recurrence_rule: newEvent.recurrence_rule,
+        color: newEvent.color
+      };
+      
+      let createdEvent;
+      let isLocalOnly = false;
+      
+      try {
+        const response = await apiService.calendar.create(eventData);
+        
+        // Handle response and transform data
+        if (response.data && response.data.data) {
+          createdEvent = response.data.data;
+        } else if (response.data) {
+          createdEvent = response.data;
+        } else {
+          throw new Error('Invalid response format');
+        }
+      } catch (apiError) {
+        console.log('📅 No backend connection - creating event locally only');
+        isLocalOnly = true;
+          // Create a local event when API fails
+        createdEvent = {
+          id: `local-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+          originalBackendId: null, // No backend ID for local events
+          isBackendEvent: false, // Mark as local event
+          title: eventData.title,
+          description: eventData.description,
+          start_time: eventData.start_time,
+          end_time: eventData.end_time,
+          event_type: eventData.event_type,
+          priority: eventData.priority,
+          project_id: eventData.project_id,
+          task_id: eventData.task_id,
+          location: eventData.location,
+          is_all_day: eventData.is_all_day,
+          attendees: eventData.attendees,
+          reminders: eventData.reminders,
+          recurrence_rule: eventData.recurrence_rule,
+          color: eventData.color,
+          completed: false
+        };
+      }      // Transform to frontend format
+      const transformedEvent = {
+        id: createdEvent.id,
+        originalBackendId: isLocalOnly ? null : createdEvent.id, // Only store backend ID for backend events
+        isBackendEvent: !isLocalOnly, // Mark as backend event if API succeeded
+        title: createdEvent.title || eventData.title, // Fallback to original title if missing
+        description: createdEvent.description || eventData.description || '',
+        start: new Date(createdEvent.start_time || createdEvent.startDate || createdEvent.start_date),
+        end: new Date(createdEvent.end_time || createdEvent.endDate || createdEvent.end_date),
+        category: createdEvent.event_type || createdEvent.category || 'meeting',
+        priority: createdEvent.priority || 'medium',
+        project: createdEvent.project_id || createdEvent.project || '',
+        completed: createdEvent.completed || false,
+        location: createdEvent.location || '',
+        attendees: createdEvent.attendees || [],
+        color: createdEvent.color || getCategoryColor(createdEvent.event_type || createdEvent.category || 'meeting')
+      };
+      
+      if (isLocalOnly) {
+        // Add to local state directly when no backend
+        setEvents(prevEvents => [...prevEvents, transformedEvent]);
+      } else {
+        // Refresh events from server to get updated data
+        await fetchEvents();
+      }
+      
+      // Update categories and ensure new event's category is selected
+      const newEventCategory = transformedEvent.category;
+      setCategories(prevCategories => {
+        const updatedCategories = prevCategories.includes(newEventCategory) 
+          ? prevCategories 
+          : [...prevCategories, newEventCategory];
+        return updatedCategories;
+      });
+      
+      // Update selectedCategories to include the new category
+      setSelectedCategories(prevSelected => {
+        return prevSelected.includes(newEventCategory) 
+          ? prevSelected 
+          : [...prevSelected, newEventCategory];
+      });
+        // Reset form
+      setShowAddEventModal(false);
+      setNewEvent({
+        title: '',
+        description: '',
+        start_time: new Date(),
+        end_time: new Date(new Date().setHours(new Date().getHours() + 1)),
+        event_type: 'meeting',
+        priority: 'medium',
+        project_id: '',
+        task_id: '',
+        location: '',
+        is_all_day: false,
+        attendees: [],
+        reminders: [{ minutes_before: 15, notification_type: 'in_app' }],
+        recurrence_rule: '',
+        color: '#8b5cf6'
+      });      // Show success notification
+      console.log('📅 Event creation debugging:', {
+        createdEventTitle: createdEvent.title,
+        eventDataTitle: eventData.title,
+        transformedEventTitle: transformedEvent.title,
+        newEventTitle: newEvent.title,
+        isLocalOnly
+      });
+      
+      // Additional validation to catch undefined titles
+      if (!transformedEvent.title || transformedEvent.title === 'undefined') {
+        console.error('❌ Warning: Event title is undefined or invalid:', {
+          transformedEvent,
+          createdEvent,
+          eventData,
+          newEvent
+        });
+      }
+      
+      const successMessage = isLocalOnly 
+        ? `Event "${transformedEvent.title || 'Untitled Event'}" created successfully! (Local only - no backend connection)`
+        : `Event "${transformedEvent.title || 'Untitled Event'}" created successfully!`;
+      success(successMessage);
+      
+      console.log('✅ Calendar event created successfully:', transformedEvent);
+        } catch (error) {
+      console.error('❌ Error creating calendar event:', error);
+      setError('Failed to create event. Please try again.');
+      showErrorNotification('Failed to create event. Please try again.');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };  // Toggle event completion status
+  const toggleEventCompletion = async () => {
     if (!currentEvent) return;
     
-    const updatedEvents = events.map(event => 
-      event.id === currentEvent.id 
-        ? { ...event, completed: !event.completed } 
-        : event
-    );
-    
-    setEvents(updatedEvents);
-    setCurrentEvent({ ...currentEvent, completed: !currentEvent.completed });
-  };
-  
-  // Delete event
-  const deleteEvent = () => {
+    try {
+      console.log('📅 Toggling event completion status for event ID:', currentEvent.id);
+      console.log('📅 Event details:', { 
+        title: currentEvent.title, 
+        id: currentEvent.id, 
+        originalBackendId: currentEvent.originalBackendId,
+        isBackendEvent: currentEvent.isBackendEvent 
+      });
+      
+      // Check if this is an explicitly local/sample event (created offline or sample data)
+      const isExplicitlyLocalEvent = currentEvent.id && 
+                                   typeof currentEvent.id === 'string' && 
+                                   (currentEvent.id.startsWith('sample-') || 
+                                    currentEvent.id.startsWith('local-'));
+      
+      if (isExplicitlyLocalEvent) {
+        console.log('🔄 Handling explicitly local/sample event completion toggle (no backend connection)');
+        
+        // Update local state only for sample events
+        const updatedEvents = events.map(event => 
+          event.id === currentEvent.id 
+            ? { ...event, completed: !event.completed } 
+            : event
+        );
+        setEvents(updatedEvents);
+        setCurrentEvent({ ...currentEvent, completed: !currentEvent.completed });
+        
+        // Show success notification
+        const statusText = !currentEvent.completed ? 'completed' : 'pending';
+        success(`Event "${currentEvent.title}" marked as ${statusText}! (Local only - no backend connection)`);
+        console.log('✅ Event completion status updated locally');
+        return;
+      }
+      
+      // For backend events (including those with undefined IDs), try backend update first
+      if (currentEvent.isBackendEvent) {
+        console.log('🌐 Attempting backend completion toggle for backend event. Original ID:', currentEvent.originalBackendId);
+          try {
+          // Use the original backend ID for update, even if it's undefined
+          const updateId = currentEvent.originalBackendId || currentEvent.id;
+          
+          // Use the correct PUT endpoint to update the event with new completion status
+          await apiService.calendar.update(updateId, { 
+            completed: !currentEvent.completed 
+          });
+          
+          // Refresh events from server to get the latest data
+          await fetchEvents();
+          
+          // Update current event state
+          setCurrentEvent({ ...currentEvent, completed: !currentEvent.completed });
+          
+          // Show success notification
+          const statusText = !currentEvent.completed ? 'completed' : 'pending';
+          success(`Event "${currentEvent.title}" marked as ${statusText}!`);
+          
+          console.log('✅ Event completion status updated successfully via backend using PUT /api/calendar/events/{id}');
+          return;
+          
+        } catch (backendError) {
+          console.error('❌ Backend completion toggle failed:', backendError);
+          
+          // If backend update fails, fall back to local update
+          console.log('🔄 Backend update failed, falling back to local update...');
+          
+          const updatedEvents = events.map(event => 
+            event.id === currentEvent.id 
+              ? { ...event, completed: !event.completed } 
+              : event
+          );
+          setEvents(updatedEvents);
+          setCurrentEvent({ ...currentEvent, completed: !currentEvent.completed });
+          
+          const statusText = !currentEvent.completed ? 'completed' : 'pending';
+          success(`Event "${currentEvent.title}" marked as ${statusText} locally (Backend update failed)`);
+          console.log('✅ Event completion status updated locally due to backend failure');
+          return;
+        }
+      }
+      
+      // Handle legacy events that don't have the isBackendEvent flag
+      // This covers events created before the backend tracking was implemented
+      if (currentEvent.id && 
+          currentEvent.id !== 'undefined' && 
+          currentEvent.id !== undefined && 
+          currentEvent.id !== null &&
+          !currentEvent.id.startsWith('fallback-') &&
+          !currentEvent.id.startsWith('backend-undefined-')) {
+        
+        console.log('🌐 Attempting backend completion toggle for legacy event ID:', currentEvent.id);
+          try {
+          // Use PUT endpoint to update event completion status
+          await apiService.calendar.update(currentEvent.id, { 
+            completed: !currentEvent.completed 
+          });
+          
+          // Refresh events from server to get the latest data
+          await fetchEvents();
+          
+          setCurrentEvent({ ...currentEvent, completed: !currentEvent.completed });
+          
+          const statusText = !currentEvent.completed ? 'completed' : 'pending';
+          success(`Event "${currentEvent.title}" marked as ${statusText}!`);
+          console.log('✅ Legacy event completion status updated successfully via backend using PUT /api/calendar/events/{id}');
+          return;
+          
+        } catch (backendError) {
+          console.error('❌ Backend completion toggle failed for legacy event:', backendError);
+          
+          const updatedEvents = events.map(event => 
+            event.id === currentEvent.id 
+              ? { ...event, completed: !event.completed } 
+              : event
+          );
+          setEvents(updatedEvents);
+          setCurrentEvent({ ...currentEvent, completed: !currentEvent.completed });
+          
+          const statusText = !currentEvent.completed ? 'completed' : 'pending';
+          success(`Event "${currentEvent.title}" marked as ${statusText} locally (Backend update failed)`);
+          console.log('✅ Legacy event completion status updated locally due to backend failure');
+          return;
+        }
+      }
+      
+      // Handle events with fallback IDs or undefined backend IDs - try local update
+      console.log('⚠️ Event has fallback/undefined ID, attempting local update only');
+      
+      const updatedEvents = events.map(event => 
+        event.id === currentEvent.id 
+          ? { ...event, completed: !event.completed } 
+          : event
+      );
+      setEvents(updatedEvents);
+      setCurrentEvent({ ...currentEvent, completed: !currentEvent.completed });
+      
+      const statusText = !currentEvent.completed ? 'completed' : 'pending';
+      success(`Event "${currentEvent.title}" marked as ${statusText} locally (Invalid event ID)`);
+      console.log('✅ Event with invalid ID completion status updated locally');
+      
+    } catch (error) {
+      console.error('❌ Error in toggleEventCompletion function:', error);
+      
+      // Last resort: try local update if everything else fails
+      try {
+        const updatedEvents = events.map(event => 
+          event.id === currentEvent.id 
+            ? { ...event, completed: !event.completed } 
+            : event
+        );
+        setEvents(updatedEvents);
+        setCurrentEvent({ ...currentEvent, completed: !currentEvent.completed });
+        
+        const statusText = !currentEvent.completed ? 'completed' : 'pending';
+        success(`Event "${currentEvent.title}" marked as ${statusText} locally (Error occurred)`);
+        console.log('✅ Event completion status updated locally due to error');
+      } catch (localError) {
+        console.error('❌ Even local update failed:', localError);
+        setError('Failed to update event status. Please try again.');
+        showErrorNotification('Failed to update event status. Please try again.');
+      }
+    }
+  };// Delete event
+  const deleteEvent = async () => {
     if (!currentEvent) return;
     
-    const updatedEvents = events.filter(event => event.id !== currentEvent.id);
-    setEvents(updatedEvents);
-    setShowEventModal(false);
+    try {
+      console.log('📅 Deleting calendar event with ID:', currentEvent.id);
+      console.log('📅 Event details:', { 
+        title: currentEvent.title, 
+        id: currentEvent.id, 
+        originalBackendId: currentEvent.originalBackendId,
+        isBackendEvent: currentEvent.isBackendEvent 
+      });
+      
+      // Check if this is an explicitly local/sample event (created offline or sample data)
+      const isExplicitlyLocalEvent = currentEvent.id && 
+                                   typeof currentEvent.id === 'string' && 
+                                   (currentEvent.id.startsWith('sample-') || 
+                                    currentEvent.id.startsWith('local-'));
+      
+      if (isExplicitlyLocalEvent) {
+        console.log('🔄 Handling explicitly local/sample event deletion (no backend connection)');
+        
+        // Remove the event from local state
+        setEvents(prevEvents => prevEvents.filter(event => event.id !== currentEvent.id));
+        setShowEventModal(false);
+        
+        // Show success notification with offline indicator
+        success(`Event "${currentEvent.title}" deleted successfully! (Local only - no backend connection)`);
+        console.log('✅ Local/sample event deleted successfully');
+        return;
+      }
+      
+      // For backend events (including those with undefined IDs), try backend deletion first
+      if (currentEvent.isBackendEvent) {
+        console.log('🌐 Attempting backend deletion for backend event. Original ID:', currentEvent.originalBackendId);
+        
+        try {
+          // Use the original backend ID for deletion, even if it's undefined
+          // The backend should handle the deletion based on other identifying information
+          const deleteId = currentEvent.originalBackendId || currentEvent.id;
+          await apiService.calendar.delete(deleteId);
+          
+          // Refresh events from server to get the latest data
+          await fetchEvents();
+          
+          setShowEventModal(false);
+          
+          // Show success notification
+          success(`Event "${currentEvent.title}" deleted successfully!`);
+          
+          console.log('✅ Calendar event deleted successfully from backend');
+          return;
+          
+        } catch (backendError) {
+          console.error('❌ Backend deletion failed:', backendError);
+          
+          // If backend deletion fails, fall back to local deletion
+          console.log('🔄 Backend deletion failed, falling back to local deletion...');
+          
+          setEvents(prevEvents => prevEvents.filter(event => event.id !== currentEvent.id));
+          setShowEventModal(false);
+          
+          success(`Event "${currentEvent.title}" deleted locally (Backend deletion failed)`);
+          console.log('✅ Event deleted locally due to backend failure');
+          return;
+        }
+      }
+      
+      // Handle legacy events that don't have the isBackendEvent flag
+      // This covers events created before the backend tracking was implemented
+      if (currentEvent.id && 
+          currentEvent.id !== 'undefined' && 
+          currentEvent.id !== undefined && 
+          currentEvent.id !== null &&
+          !currentEvent.id.startsWith('fallback-') &&
+          !currentEvent.id.startsWith('backend-undefined-')) {
+        
+        console.log('🌐 Attempting backend deletion for legacy event ID:', currentEvent.id);
+        
+        try {
+          await apiService.calendar.delete(currentEvent.id);
+          
+          // Refresh events from server to get the latest data
+          await fetchEvents();
+          
+          setShowEventModal(false);
+          
+          success(`Event "${currentEvent.title}" deleted successfully!`);
+          console.log('✅ Legacy event deleted successfully from backend');
+          return;
+          
+        } catch (backendError) {
+          console.error('❌ Backend deletion failed for legacy event:', backendError);
+          
+          setEvents(prevEvents => prevEvents.filter(event => event.id !== currentEvent.id));
+          setShowEventModal(false);
+          
+          success(`Event "${currentEvent.title}" deleted locally (Backend deletion failed)`);
+          console.log('✅ Legacy event deleted locally due to backend failure');
+          return;
+        }
+      }
+      
+      // Handle events with fallback IDs or undefined backend IDs - try local deletion
+      console.log('⚠️ Event has fallback/undefined ID, performing local deletion only');
+      
+      setEvents(prevEvents => prevEvents.filter(event => event.id !== currentEvent.id));
+      setShowEventModal(false);
+      
+      success(`Event "${currentEvent.title}" deleted locally (Invalid event ID)`);
+      console.log('✅ Event with invalid ID deleted locally');
+      
+    } catch (error) {
+      console.error('❌ Error in deleteEvent function:', error);
+      
+      // Last resort: try local deletion if everything else fails
+      try {
+        setEvents(prevEvents => prevEvents.filter(event => event.id !== currentEvent.id));
+        setShowEventModal(false);
+        
+        success(`Event "${currentEvent.title}" deleted locally (Error occurred)`);
+        console.log('✅ Event deleted locally due to error');
+      } catch (localError) {
+        console.error('❌ Even local deletion failed:', localError);
+        setError('Failed to delete event. Please try again.');
+        showErrorNotification('Failed to delete event. Please try again.');
+      }
+    }
   };
   
   // Get days in month
@@ -508,11 +1038,13 @@ const Calendar = () => {
       const dayEvents = getEventsForDate(date);
       const hasEventsToday = dayEvents.length > 0;
       
-      days.push(
-        <div 
+      days.push(        <div 
           key={`day-${day}`} 
           className={`calendar-day ${isToday(date) ? 'today' : ''} ${isSelected(date) ? 'selected' : ''}`}
-          onClick={() => setSelectedDate(date)}
+          onClick={() => {
+            setSelectedDate(date);
+            openAddEventModal(date);
+          }}
         >
           <div className="day-header">
             <span className="day-number">{day}</span>
@@ -579,7 +1111,10 @@ const Calendar = () => {
       
       days.push(
         <div key={`week-day-${i}`} className="week-day">
-          <div className={`week-day-header ${isToday(date) ? 'today' : ''} ${isSelected(date) ? 'selected' : ''}`} onClick={() => setSelectedDate(date)}>
+          <div className={`week-day-header ${isToday(date) ? 'today' : ''} ${isSelected(date) ? 'selected' : ''}`} onClick={() => {
+            setSelectedDate(date);
+            openAddEventModal(date);
+          }}>
             <div className="week-day-name">{['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][date.getDay()]}</div>
             <div className="week-day-number">{date.getDate()}</div>
           </div>
@@ -817,8 +1352,7 @@ const Calendar = () => {
             <div className="event-modal-description">
               <p>{currentEvent.description}</p>
             </div>
-            
-            <div className="event-modal-details">
+              <div className="event-modal-details">
               <div className="detail-item">
                 <div className="detail-icon">
                   <FaRegCalendarAlt />
@@ -826,24 +1360,77 @@ const Calendar = () => {
                 <div className="detail-content">
                   <span className="detail-label">Date & Time</span>
                   <div className="detail-value">
-                    {currentEvent.start.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })}
-                    <br />
-                    {currentEvent.start.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })} - 
-                    {currentEvent.end.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}
+                    {currentEvent.isAllDay ? (
+                      <>
+                        {currentEvent.start.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })}
+                        <br />
+                        <span className="all-day-badge">All Day Event</span>
+                      </>
+                    ) : (
+                      <>
+                        {currentEvent.start.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })}
+                        <br />
+                        {currentEvent.start.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })} - 
+                        {currentEvent.end.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}
+                      </>
+                    )}
                   </div>
                 </div>
               </div>
               
-              <div className="detail-item">
-                <div className="detail-icon">
-                  <FaProjectDiagram />
+              {/* Project Details */}
+              {(currentEvent.project || currentEvent.projectDetails) && (
+                <div className="detail-item">
+                  <div className="detail-icon">
+                    <FaProjectDiagram />
+                  </div>
+                  <div className="detail-content">
+                    <span className="detail-label">Project</span>
+                    <div className="detail-value">
+                      {currentEvent.projectDetails ? (
+                        <>
+                          <strong>{currentEvent.projectDetails.title || currentEvent.project}</strong>
+                          {currentEvent.projectDetails.description && (
+                            <div className="detail-sub-text">{currentEvent.projectDetails.description}</div>
+                          )}
+                        </>
+                      ) : (
+                        currentEvent.project
+                      )}
+                    </div>
+                  </div>
                 </div>
-                <div className="detail-content">
-                  <span className="detail-label">Project</span>
-                  <div className="detail-value">{currentEvent.project}</div>
-                </div>
-              </div>
+              )}
               
+              {/* Task Details */}
+              {(currentEvent.task || currentEvent.taskDetails) && (
+                <div className="detail-item">
+                  <div className="detail-icon">
+                    <FaTasks />
+                  </div>
+                  <div className="detail-content">
+                    <span className="detail-label">Task</span>
+                    <div className="detail-value">
+                      {currentEvent.taskDetails ? (
+                        <>
+                          <strong>{currentEvent.taskDetails.title || currentEvent.task}</strong>
+                          {currentEvent.taskDetails.description && (
+                            <div className="detail-sub-text">{currentEvent.taskDetails.description}</div>
+                          )}                          {currentEvent.taskDetails.status && (
+                            <div className={`task-status-badge status-${currentEvent.taskDetails.status}`}>
+                              {currentEvent.taskDetails.status.charAt(0).toUpperCase() + currentEvent.taskDetails.status.slice(1)}
+                            </div>
+                          )}
+                        </>
+                      ) : (
+                        currentEvent.task
+                      )}
+                    </div>
+                  </div>
+                </div>
+              )}
+              
+              {/* Location */}
               {currentEvent.location && (
                 <div className="detail-item">
                   <div className="detail-icon">
@@ -855,8 +1442,9 @@ const Calendar = () => {
                   </div>
                 </div>
               )}
-              
-              {currentEvent.attendees && currentEvent.attendees.length > 0 && (
+                {/* Enhanced Attendees with Status */}
+              {((currentEvent.attendeesWithStatus && currentEvent.attendeesWithStatus.length > 0) || 
+                (currentEvent.attendees && currentEvent.attendees.length > 0)) && (
                 <div className="detail-item">
                   <div className="detail-icon">
                     <FaUserFriends />
@@ -864,9 +1452,98 @@ const Calendar = () => {
                   <div className="detail-content">
                     <span className="detail-label">Attendees</span>
                     <div className="attendees-list">
-                      {currentEvent.attendees.map((attendee, index) => (
-                        <span key={index} className="attendee">{attendee}</span>
+                      {(() => {
+                        try {
+                          if (currentEvent.attendeesWithStatus && currentEvent.attendeesWithStatus.length > 0) {
+                            return currentEvent.attendeesWithStatus.map((attendee, index) => (
+                              <div key={index} className="attendee-with-status">
+                                <span className="attendee-name">
+                                  {attendee?.name || attendee?.email || 'Unknown Attendee'}
+                                </span>
+                                <span className={`attendee-status status-${attendee?.status || 'pending'}`}>
+                                  {attendee?.status ? attendee.status.charAt(0).toUpperCase() + attendee.status.slice(1) : 'Pending'}
+                                </span>
+                              </div>
+                            ));
+                          } else if (currentEvent.attendees && currentEvent.attendees.length > 0) {
+                            return currentEvent.attendees.map((attendee, index) => (
+                              <span key={index} className="attendee">
+                                {typeof attendee === 'string' 
+                                  ? attendee 
+                                  : (attendee?.email || attendee?.name || 'Unknown')}
+                              </span>
+                            ));
+                          }
+                          return null;
+                        } catch (error) {
+                          console.error('Error rendering attendees:', error);
+                          return <span className="attendee">Error loading attendees</span>;
+                        }
+                      })()}
+                    </div>
+                  </div>
+                </div>
+              )}
+              
+              {/* Reminders */}
+              {currentEvent.reminders && currentEvent.reminders.length > 0 && (
+                <div className="detail-item">
+                  <div className="detail-icon">
+                    <FaBell />
+                  </div>
+                  <div className="detail-content">
+                    <span className="detail-label">Reminders</span>
+                    <div className="reminders-list">
+                      {currentEvent.reminders.map((reminder, index) => (
+                        <div key={index} className="reminder-item-display">
+                          {reminder.minutes_before} minutes before via {reminder.notification_type}
+                        </div>
                       ))}
+                    </div>
+                  </div>
+                </div>
+              )}
+              
+              {/* Recurrence Rule */}
+              {currentEvent.recurrenceRule && (
+                <div className="detail-item">
+                  <div className="detail-icon">
+                    <FaSyncAlt />
+                  </div>
+                  <div className="detail-content">
+                    <span className="detail-label">Recurrence</span>
+                    <div className="detail-value">
+                      {currentEvent.recurrenceRule.replace('FREQ=', '').toLowerCase().charAt(0).toUpperCase() + 
+                       currentEvent.recurrenceRule.replace('FREQ=', '').toLowerCase().slice(1)}
+                    </div>
+                  </div>
+                </div>
+              )}
+              
+              {/* Created/Updated Information */}
+              {(currentEvent.createdAt || currentEvent.updatedAt) && (
+                <div className="detail-item">
+                  <div className="detail-icon">
+                    <FaInfoCircle />
+                  </div>
+                  <div className="detail-content">
+                    <span className="detail-label">Event Information</span>
+                    <div className="detail-value">
+                      {currentEvent.createdAt && (
+                        <div className="event-timestamp">
+                          Created: {currentEvent.createdAt.toLocaleDateString('en-US')} at {currentEvent.createdAt.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}
+                        </div>
+                      )}
+                      {currentEvent.updatedAt && currentEvent.updatedAt.getTime() !== currentEvent.createdAt?.getTime() && (
+                        <div className="event-timestamp">
+                          Last updated: {currentEvent.updatedAt.toLocaleDateString('en-US')} at {currentEvent.updatedAt.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}
+                        </div>
+                      )}
+                      {currentEvent.createdBy && (
+                        <div className="event-timestamp">
+                          Created by: {currentEvent.createdBy.name || currentEvent.createdBy.email || 'Unknown'}
+                        </div>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -916,7 +1593,7 @@ const Calendar = () => {
           exit={{ y: 50, opacity: 0, scale: 0.9 }}
           transition={{ type: "spring", damping: 15 }}
         >
-          <div className="event-modal-header" style={{ backgroundColor: getCategoryColor(newEvent.category) }}>
+          <div className="event-modal-header" style={{ backgroundColor: getCategoryColor(newEvent.event_type) }}>
             <div className="event-modal-category">
               <FaRegCalendarPlus />
               <span>Add New Event</span>
@@ -951,49 +1628,63 @@ const Calendar = () => {
                   rows="3"
                 ></textarea>
               </div>
-              
-              <div className="form-row">
+                <div className="form-row">
                 <div className="form-group">
-                  <label htmlFor="start">Start Date & Time</label>
+                  <label htmlFor="start_time">Start Date & Time</label>
                   <input
                     type="datetime-local"
-                    id="start"
-                    name="start"
-                    value={formatDateForInput(newEvent.start)}
+                    id="start_time"
+                    name="start_time"
+                    value={formatDateForInput(newEvent.start_time)}
                     onChange={handleDateTimeChange}
                     required
                   />
                 </div>
                 
                 <div className="form-group">
-                  <label htmlFor="end">End Date & Time</label>
+                  <label htmlFor="end_time">End Date & Time</label>
                   <input
                     type="datetime-local"
-                    id="end"
-                    name="end"
-                    value={formatDateForInput(newEvent.end)}
+                    id="end_time"
+                    name="end_time"
+                    value={formatDateForInput(newEvent.end_time)}
                     onChange={handleDateTimeChange}
                     required
                   />
                 </div>
               </div>
               
-              <div className="form-row">
+              <div className="form-group">
+                <label className="checkbox-label">
+                  <input
+                    type="checkbox"
+                    name="is_all_day"
+                    checked={newEvent.is_all_day}
+                    onChange={handleNewEventChange}
+                  />
+                  <span>All Day Event</span>
+                </label>
+              </div>
+                <div className="form-row">
                 <div className="form-group">
-                  <label htmlFor="category">Category</label>
+                  <label htmlFor="event_type">Event Type</label>
                   <select
-                    id="category"
-                    name="category"
-                    value={newEvent.category}
+                    id="event_type"
+                    name="event_type"
+                    value={newEvent.event_type}
                     onChange={handleNewEventChange}
                     required
                   >
                     <option value="meeting">Meeting</option>
                     <option value="deadline">Deadline</option>
+                    <option value="milestone">Milestone</option>
                     <option value="planning">Planning</option>
                     <option value="development">Development</option>
                     <option value="review">Review</option>
                     <option value="learning">Learning</option>
+                    <option value="standup">Standup</option>
+                    <option value="presentation">Presentation</option>
+                    <option value="workshop">Workshop</option>
                   </select>
                 </div>
                 
@@ -1008,23 +1699,36 @@ const Calendar = () => {
                     <option value="low">Low</option>
                     <option value="medium">Medium</option>
                     <option value="high">High</option>
+                    <option value="urgent">Urgent</option>
                   </select>
+                </div>
+              </div>              <div className="form-row">
+                <div className="form-group">
+                  <label htmlFor="project_id">Project</label>
+                  <input
+                    type="text"
+                    id="project_id"
+                    name="project_id"
+                    value={newEvent.project_id || ''}
+                    onChange={handleNewEventChange}
+                    placeholder="Enter project ID or name"
+                  />
+                </div>
+                
+                <div className="form-group">
+                  <label htmlFor="task_id">Task</label>
+                  <input
+                    type="text"
+                    id="task_id"
+                    name="task_id"
+                    value={newEvent.task_id || ''}
+                    onChange={handleNewEventChange}
+                    placeholder="Enter task ID or name"
+                  />
                 </div>
               </div>
               
               <div className="form-row">
-                <div className="form-group">
-                  <label htmlFor="project">Project</label>
-                  <input
-                    type="text"
-                    id="project"
-                    name="project"
-                    value={newEvent.project}
-                    onChange={handleNewEventChange}
-                    placeholder="Enter project name"
-                  />
-                </div>
-                
                 <div className="form-group">
                   <label htmlFor="location">Location</label>
                   <input
@@ -1036,14 +1740,141 @@ const Calendar = () => {
                     placeholder="Enter location"
                   />
                 </div>
+                  <div className="form-group">
+                  <label htmlFor="color">Color</label>
+                  <input
+                    type="color"
+                    id="color"
+                    name="color"
+                    value={newEvent.color}
+                    onChange={handleNewEventChange}
+                  />
+                </div>
               </div>
               
-              <div className="event-modal-actions">
-                <button type="button" className="btn-outline" onClick={() => setShowAddEventModal(false)}>
+              {/* Attendees Section */}
+              <div className="form-group">
+                <label htmlFor="attendees">Attendees</label>                <textarea
+                  id="attendees"
+                  name="attendees"
+                  value={Array.isArray(newEvent.attendees) 
+                    ? newEvent.attendees.map(attendee => 
+                        typeof attendee === 'string' ? attendee : (attendee?.email || attendee?.name || '')
+                      ).join(', ')
+                    : ''
+                  }
+                  onChange={(e) => {
+                    const attendeesList = e.target.value.split(',').map(email => email.trim()).filter(email => email);
+                    setNewEvent(prev => ({ ...prev, attendees: attendeesList }));
+                  }}
+                  placeholder="Enter email addresses separated by commas"
+                  rows="2"
+                />
+                <small className="form-help">Enter attendee email addresses separated by commas</small>
+              </div>
+              
+              {/* Reminders Section */}
+              <div className="form-group">
+                <label>Reminders</label>
+                <div className="reminders-container">
+                  {newEvent.reminders.map((reminder, index) => (
+                    <div key={index} className="reminder-item">
+                      <div className="reminder-row">
+                        <input
+                          type="number"
+                          value={reminder.minutes_before}
+                          onChange={(e) => {
+                            const newReminders = [...newEvent.reminders];
+                            newReminders[index].minutes_before = parseInt(e.target.value) || 0;
+                            setNewEvent(prev => ({ ...prev, reminders: newReminders }));
+                          }}
+                          placeholder="Minutes"
+                          min="0"
+                          max="10080"
+                        />
+                        <span>minutes before via</span>
+                        <select
+                          value={reminder.notification_type}
+                          onChange={(e) => {
+                            const newReminders = [...newEvent.reminders];
+                            newReminders[index].notification_type = e.target.value;
+                            setNewEvent(prev => ({ ...prev, reminders: newReminders }));
+                          }}
+                        >
+                          <option value="in_app">In-App</option>
+                          <option value="email">Email</option>
+                          <option value="sms">SMS</option>
+                        </select>
+                        {newEvent.reminders.length > 1 && (
+                          <button
+                            type="button"
+                            className="btn-icon-small danger"
+                            onClick={() => {
+                              const newReminders = newEvent.reminders.filter((_, i) => i !== index);
+                              setNewEvent(prev => ({ ...prev, reminders: newReminders }));
+                            }}
+                          >
+                            <FaTimes />
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                  <button
+                    type="button"
+                    className="btn-outline-small"
+                    onClick={() => {
+                      setNewEvent(prev => ({
+                        ...prev,
+                        reminders: [...prev.reminders, { minutes_before: 15, notification_type: 'in_app' }]
+                      }));
+                    }}
+                  >
+                    <FaPlus /> Add Reminder
+                  </button>
+                </div>
+              </div>
+              
+              {/* Recurrence Rule */}
+              <div className="form-group">
+                <label htmlFor="recurrence_rule">Recurrence</label>
+                <select
+                  id="recurrence_rule"
+                  name="recurrence_rule"
+                  value={newEvent.recurrence_rule}
+                  onChange={handleNewEventChange}
+                >
+                  <option value="">No Recurrence</option>
+                  <option value="FREQ=DAILY">Daily</option>
+                  <option value="FREQ=WEEKLY">Weekly</option>
+                  <option value="FREQ=MONTHLY">Monthly</option>
+                  <option value="FREQ=YEARLY">Yearly</option>
+                </select>
+              </div>
+                <div className="event-modal-actions">
+                <button 
+                  type="button" 
+                  className="btn-outline" 
+                  onClick={() => setShowAddEventModal(false)}
+                  disabled={isSubmitting}
+                >
                   <FaTimes /> Cancel
                 </button>
-                <button type="submit" className="btn-primary">
-                  <FaPlus /> Add Event
+                <button 
+                  type="submit" 
+                  className="btn-primary"
+                  disabled={isSubmitting}
+                >
+                  {isSubmitting ? (
+                    <>
+                      <div className="loading-spinner-small"></div>
+                      Creating...
+                    </>
+                  ) : (
+                    <>
+                      <FaPlus /> Add Event
+                    </>
+                  )}
                 </button>
               </div>
             </form>
@@ -1052,8 +1883,7 @@ const Calendar = () => {
       </motion.div>
     );
   };
-  
-  if (isLoading) {
+    if (isLoading) {
     return (
       <div className="calendar-loading">
         <div className="loading-spinner"></div>
@@ -1061,9 +1891,36 @@ const Calendar = () => {
       </div>
     );
   }
-  
+
+  if (error) {
+    return (
+      <div className="calendar-error">
+        <div className="error-icon">
+          <FaExclamationTriangle />
+        </div>
+        <h3>Error Loading Calendar</h3>
+        <p>{error}</p>
+        <button 
+          className="btn-primary" 
+          onClick={() => window.location.reload()}
+        >
+          <FaSyncAlt /> Retry
+        </button>
+      </div>
+    );
+  }
+
   return (
     <div className="calendar-container">
+      {error && (
+        <div className="error-banner">
+          <FaExclamationTriangle />
+          <span>{error}</span>
+          <button onClick={() => setError(null)}>
+            <FaTimes />
+          </button>
+        </div>
+      )}
       <div className="calendar-header">
         <div className="header-left">
           <h1><FaCalendarAlt /> Calendar</h1>
@@ -1087,12 +1944,11 @@ const Calendar = () => {
               </button>
             )}
           </div>
-          
-          <button className="btn-filter" onClick={() => setShowFilters(!showFilters)}>
+            <button className="btn-filter" onClick={() => setShowFilters(!showFilters)}>
             <FaFilter /> Filter
           </button>
           
-          <button className="btn-primary" onClick={() => setShowAddEventModal(true)}>
+          <button className="btn-primary" onClick={() => openAddEventModal()}>
             <FaPlus /> Add Event
           </button>
         </div>
@@ -2112,13 +2968,152 @@ const Calendar = () => {
           gap: var(--spacing-xs);
           margin-top: var(--spacing-xs);
         }
-        
-        .attendee {
+          .attendee {
           font-size: var(--text-xs);
           padding: var(--spacing-xs) var(--spacing-sm);
           background-color: var(--gray-100);
           border-radius: var(--border-radius-full);
           color: var(--gray-700);
+        }
+        
+        /* New Modal Element Styles */
+        .detail-sub-text {
+          font-size: var(--text-xs);
+          color: var(--gray-600);
+          margin-top: var(--spacing-xs);
+          font-style: italic;
+          line-height: 1.4;
+        }
+        
+        .task-status-badge {
+          display: inline-block;
+          padding: var(--spacing-xs) var(--spacing-sm);
+          border-radius: var(--border-radius-full);
+          font-size: var(--text-xs);
+          font-weight: 500;
+          margin-top: var(--spacing-xs);
+          text-transform: capitalize;
+        }
+        
+        .task-status-badge.status-pending {
+          background-color: rgba(245, 158, 11, 0.1);
+          color: var(--warning-color);
+          border: 1px solid rgba(245, 158, 11, 0.3);
+        }
+        
+        .task-status-badge.status-in-progress {
+          background-color: rgba(59, 130, 246, 0.1);
+          color: var(--info-color);
+          border: 1px solid rgba(59, 130, 246, 0.3);
+        }
+        
+        .task-status-badge.status-completed {
+          background-color: rgba(16, 185, 129, 0.1);
+          color: var(--success-color);
+          border: 1px solid rgba(16, 185, 129, 0.3);
+        }
+        
+        .task-status-badge.status-cancelled {
+          background-color: rgba(239, 68, 68, 0.1);
+          color: var(--danger-color);
+          border: 1px solid rgba(239, 68, 68, 0.3);
+        }
+        
+        .attendee-with-status {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          padding: var(--spacing-xs) var(--spacing-sm);
+          background-color: var(--gray-50);
+          border-radius: var(--border-radius);
+          margin-bottom: var(--spacing-xs);
+          border: 1px solid var(--gray-200);
+        }
+        
+        .attendee-name {
+          font-size: var(--text-sm);
+          color: var(--gray-700);
+          font-weight: 500;
+        }
+        
+        .attendee-status {
+          font-size: var(--text-xs);
+          padding: 2px var(--spacing-xs);
+          border-radius: var(--border-radius-sm);
+          font-weight: 500;
+          text-transform: capitalize;
+        }
+        
+        .attendee-status.status-accepted {
+          background-color: rgba(16, 185, 129, 0.1);
+          color: var(--success-color);
+        }
+        
+        .attendee-status.status-declined {
+          background-color: rgba(239, 68, 68, 0.1);
+          color: var(--danger-color);
+        }
+        
+        .attendee-status.status-tentative {
+          background-color: rgba(245, 158, 11, 0.1);
+          color: var(--warning-color);
+        }
+        
+        .attendee-status.status-pending {
+          background-color: rgba(156, 163, 175, 0.1);
+          color: var(--gray-600);
+        }
+        
+        .reminders-list {
+          display: flex;
+          flex-direction: column;
+          gap: var(--spacing-sm);
+          margin-top: var(--spacing-xs);
+        }
+        
+        .reminder-item {
+          display: flex;
+          align-items: center;
+          gap: var(--spacing-sm);
+          padding: var(--spacing-sm);
+          background-color: var(--gray-50);
+          border-radius: var(--border-radius);
+          border: 1px solid var(--gray-200);
+        }
+        
+        .reminder-icon {
+          color: var(--primary-color);
+          font-size: var(--text-sm);
+        }
+        
+        .reminder-text {
+          font-size: var(--text-sm);
+          color: var(--gray-700);
+        }
+        
+        .event-timestamp {
+          font-size: var(--text-xs);
+          color: var(--gray-500);
+          margin-bottom: var(--spacing-xs);
+          display: flex;
+          align-items: center;
+          gap: var(--spacing-xs);
+        }
+        
+        .event-timestamp:last-child {
+          margin-bottom: 0;
+        }
+        
+        .all-day-badge {
+          display: inline-block;
+          padding: var(--spacing-xs) var(--spacing-sm);
+          background-color: rgba(79, 70, 229, 0.1);
+          color: var(--primary-color);
+          border-radius: var(--border-radius-full);
+          font-size: var(--text-xs);
+          font-weight: 500;
+          border: 1px solid rgba(79, 70, 229, 0.3);
+          margin-left: var(--spacing-sm);
         }
         
         .event-modal-actions {
@@ -2163,8 +3158,7 @@ const Calendar = () => {
           font-size: var(--text-sm);
           transition: var(--transition-fast);
         }
-        
-        .form-group input:focus,
+          .form-group input:focus,
         .form-group textarea:focus,
         .form-group select:focus {
           outline: none;
@@ -2172,7 +3166,113 @@ const Calendar = () => {
           box-shadow: 0 0 0 2px rgba(79, 70, 229, 0.2);
         }
         
-        /* Loading State */
+        /* Checkbox Styles */
+        .checkbox-label {
+          display: flex;
+          align-items: center;
+          gap: var(--spacing-sm);
+          cursor: pointer;
+          font-size: var(--text-sm);
+          color: var(--gray-700);
+        }
+        
+        .checkbox-label input[type="checkbox"] {
+          margin: 0;
+          cursor: pointer;
+        }
+        
+        /* Form Help Text */
+        .form-help {
+          font-size: var(--text-xs);
+          color: var(--gray-500);
+          margin-top: var(--spacing-xs);
+        }
+        
+        /* Reminders Styles */
+        .reminders-container {
+          display: flex;
+          flex-direction: column;
+          gap: var(--spacing-sm);
+        }
+        
+        .reminder-item {
+          border: 1px solid var(--gray-200);
+          border-radius: var(--border-radius);
+          padding: var(--spacing-sm);
+          background-color: var(--gray-50);
+        }
+        
+        .reminder-row {
+          display: flex;
+          align-items: center;
+          gap: var(--spacing-sm);
+          flex-wrap: wrap;
+        }
+        
+        .reminder-row input[type="number"] {
+          width: 80px;
+          padding: var(--spacing-xs);
+          border: 1px solid var(--gray-300);
+          border-radius: var(--border-radius);
+          font-size: var(--text-sm);
+        }
+        
+        .reminder-row select {
+          padding: var(--spacing-xs);
+          border: 1px solid var(--gray-300);
+          border-radius: var(--border-radius);
+          font-size: var(--text-sm);
+        }
+        
+        .reminder-row span {
+          font-size: var(--text-sm);
+          color: var(--gray-600);
+        }
+        
+        .btn-outline-small {
+          padding: var(--spacing-xs) var(--spacing-sm);
+          border: 1px solid var(--primary-color);
+          background-color: transparent;
+          color: var(--primary-color);
+          border-radius: var(--border-radius);
+          font-size: var(--text-sm);
+          display: flex;
+          align-items: center;
+          gap: var(--spacing-xs);
+          cursor: pointer;
+          transition: var(--transition-fast);
+        }
+        
+        .btn-outline-small:hover {
+          background-color: var(--primary-color);
+          color: var(--white);
+        }
+        
+        .btn-icon-small {
+          padding: var(--spacing-xs);
+          border: none;
+          border-radius: var(--border-radius);
+          background-color: transparent;
+          color: var(--gray-500);
+          cursor: pointer;
+          transition: var(--transition-fast);
+          display: flex;
+          align-items: center;
+          justify-content: center;
+        }
+        
+        .btn-icon-small.danger {
+          color: var(--danger-color);
+        }
+        
+        .btn-icon-small:hover {
+          background-color: var(--gray-100);
+        }
+        
+        .btn-icon-small.danger:hover {
+          background-color: rgba(239, 68, 68, 0.1);
+        }
+          /* Loading State */
         .calendar-loading {
           display: flex;
           flex-direction: column;
@@ -2189,6 +3289,66 @@ const Calendar = () => {
           border-top-color: var(--primary-color);
           animation: spin 1s linear infinite;
           margin-bottom: var(--spacing-md);
+        }
+        
+        .loading-spinner-small {
+          width: 16px;
+          height: 16px;
+          border: 2px solid rgba(255, 255, 255, 0.3);
+          border-radius: 50%;
+          border-top-color: white;
+          animation: spin 1s linear infinite;
+          margin-right: var(--spacing-xs);
+        }
+        
+        /* Error State */
+        .calendar-error {
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          justify-content: center;
+          height: 400px;
+          text-align: center;
+        }
+        
+        .error-icon {
+          font-size: var(--text-4xl);
+          color: var(--danger-color);
+          margin-bottom: var(--spacing-md);
+        }
+        
+        .calendar-error h3 {
+          font-size: var(--text-xl);
+          font-weight: 600;
+          color: var(--gray-800);
+          margin-bottom: var(--spacing-sm);
+        }
+        
+        .calendar-error p {
+          font-size: var(--text-base);
+          color: var(--gray-600);
+          margin-bottom: var(--spacing-lg);
+        }
+        
+        .error-banner {
+          display: flex;
+          align-items: center;
+          gap: var(--spacing-sm);
+          background-color: rgba(239, 68, 68, 0.1);
+          color: var(--danger-color);
+          padding: var(--spacing-sm) var(--spacing-md);
+          border-radius: var(--border-radius);
+          margin-bottom: var(--spacing-md);
+          border: 1px solid rgba(239, 68, 68, 0.2);
+        }
+        
+        .error-banner button {
+          background: none;
+          border: none;
+          color: var(--danger-color);
+          cursor: pointer;
+          margin-left: auto;
+          padding: var(--spacing-xs);
         }
         
         @keyframes spin {

@@ -235,12 +235,19 @@ const Tasks = ({ filter, showNewTaskForm = false }) => {
   const [loadingSubtasks, setLoadingSubtasks] = useState({});
   const [newSubtask, setNewSubtask] = useState({ title: '', description: '' });
   const [addingSubtask, setAddingSubtask] = useState(null);
-
   // Comments state
   const [comments, setComments] = useState({});
   const [loadingComments, setLoadingComments] = useState({});
   const [newComment, setNewComment] = useState('');
   const [showComments, setShowComments] = useState({});
+
+  // Edit state for subtasks
+  const [editingSubtask, setEditingSubtask] = useState(null);
+  const [editSubtaskData, setEditSubtaskData] = useState({ title: '', description: '' });
+
+  // Edit state for comments
+  const [editingComment, setEditingComment] = useState(null);
+  const [editCommentText, setEditCommentText] = useState('');
 
   // Attachments state
   const [attachments, setAttachments] = useState({});
@@ -667,6 +674,93 @@ const Tasks = ({ filter, showNewTaskForm = false }) => {
       console.error('❌ Error deleting comment:', error);
       alert('Failed to delete comment');
     }
+  };
+
+  // Edit subtask handlers
+  const handleEditSubtask = (subtask) => {
+    setEditingSubtask(subtask.id);
+    setEditSubtaskData({
+      title: subtask.title || '',
+      description: subtask.description || ''
+    });
+  };
+
+  const handleSaveSubtaskEdit = async (taskId, subtaskId) => {
+    if (!editSubtaskData.title.trim()) {
+      alert('Please enter a subtask title');
+      return;
+    }
+
+    try {
+      console.log('🔄 Updating subtask:', { taskId, subtaskId, data: editSubtaskData });
+      const response = await apiService.tasks.subtasks.update(taskId, subtaskId, editSubtaskData);
+      console.log('✅ Subtask updated:', response);
+
+      // Update the subtasks in state
+      setSubtasks(prev => ({
+        ...prev,
+        [taskId]: prev[taskId].map(subtask => 
+          subtask.id === subtaskId 
+            ? { ...subtask, ...editSubtaskData }
+            : subtask
+        )
+      }));
+
+      // Reset edit state
+      setEditingSubtask(null);
+      setEditSubtaskData({ title: '', description: '' });
+      alert('Subtask updated successfully!');
+    } catch (error) {
+      console.error('❌ Error updating subtask:', error);
+      alert('Failed to update subtask');
+    }
+  };
+
+  const handleCancelSubtaskEdit = () => {
+    setEditingSubtask(null);
+    setEditSubtaskData({ title: '', description: '' });
+  };
+
+  // Edit comment handlers
+  const handleEditComment = (comment) => {
+    setEditingComment(comment.id);
+    setEditCommentText(comment.comment || '');
+  };
+
+  const handleSaveCommentEdit = async (taskId, commentId) => {
+    if (!editCommentText.trim()) {
+      alert('Please enter a comment');
+      return;
+    }
+
+    try {
+      console.log('🔄 Updating comment:', { taskId, commentId, comment: editCommentText });
+      const response = await apiService.tasks.comments.update(taskId, commentId, { comment: editCommentText });
+      console.log('✅ Comment updated:', response);
+
+      // Update the comments in state
+      setComments(prev => ({
+        ...prev,
+        [taskId]: prev[taskId].map(comment => 
+          comment.id === commentId 
+            ? { ...comment, comment: editCommentText }
+            : comment
+        )
+      }));
+
+      // Reset edit state
+      setEditingComment(null);
+      setEditCommentText('');
+      alert('Comment updated successfully!');
+    } catch (error) {
+      console.error('❌ Error updating comment:', error);
+      alert('Failed to update comment');
+    }
+  };
+
+  const handleCancelCommentEdit = () => {
+    setEditingComment(null);
+    setEditCommentText('');
   };
 
   // Attachments functions
@@ -2324,35 +2418,82 @@ const Tasks = ({ filter, showNewTaskForm = false }) => {
                 ) : (                  <div className="subtasks-list">
                     {(subtasks[selectedTaskModal.id] || []).map(subtask => (
                       <div key={subtask.id} className={`subtask-item ${subtask.is_completed ? 'completed' : ''}`}>
-                        <input
-                          type="checkbox"
-                          checked={subtask.is_completed}
-                          onChange={(e) => handleToggleSubtask(selectedTaskModal.id, subtask.id, e.target.checked)}
-                        />
-                        <div className="subtask-content">
-                          <div className="subtask-text">{subtask.title}</div>
-                          {subtask.description && (
-                            <div className="subtask-description">{subtask.description}</div>
-                          )}
-                          <div className="subtask-meta">
-                            <span className="subtask-date">
-                              Created: {new Date(subtask.created_at).toLocaleDateString()}
-                            </span>
-                            {subtask.is_completed && subtask.updated_at !== subtask.created_at && (
-                              <span className="subtask-completed-date">
-                                Completed: {new Date(subtask.updated_at).toLocaleDateString()}
-                              </span>
-                            )}
+                        {editingSubtask === subtask.id ? (
+                          // Edit mode
+                          <div className="subtask-edit-form">
+                            <div className="edit-form-inputs">
+                              <input
+                                type="text"
+                                value={editSubtaskData.title}
+                                onChange={(e) => setEditSubtaskData(prev => ({ ...prev, title: e.target.value }))}
+                                placeholder="Subtask title"
+                                className="edit-input"
+                              />
+                              <textarea
+                                value={editSubtaskData.description}
+                                onChange={(e) => setEditSubtaskData(prev => ({ ...prev, description: e.target.value }))}
+                                placeholder="Description (optional)"
+                                rows="2"
+                                className="edit-textarea"
+                              />
+                            </div>
+                            <div className="edit-form-actions">
+                              <button 
+                                className="btn-sm btn-secondary"
+                                onClick={handleCancelSubtaskEdit}
+                              >
+                                <FaTimes /> Cancel
+                              </button>
+                              <button 
+                                className="btn-sm btn-primary"
+                                onClick={() => handleSaveSubtaskEdit(selectedTaskModal.id, subtask.id)}
+                              >
+                                <FaCheck /> Save
+                              </button>
+                            </div>
                           </div>
-                        </div>
-                        <div className="subtask-actions">
-                          <button 
-                            className="delete-btn"
-                            onClick={() => handleDeleteSubtask(selectedTaskModal.id, subtask.id)}
-                          >
-                            <FaTrash />
-                          </button>
-                        </div>
+                        ) : (
+                          // View mode
+                          <>
+                            <input
+                              type="checkbox"
+                              checked={subtask.is_completed}
+                              onChange={(e) => handleToggleSubtask(selectedTaskModal.id, subtask.id, e.target.checked)}
+                            />
+                            <div className="subtask-content">
+                              <div className="subtask-text">{subtask.title}</div>
+                              {subtask.description && (
+                                <div className="subtask-description">{subtask.description}</div>
+                              )}
+                              <div className="subtask-meta">
+                                <span className="subtask-date">
+                                  Created: {new Date(subtask.created_at).toLocaleDateString()}
+                                </span>
+                                {subtask.is_completed && subtask.updated_at !== subtask.created_at && (
+                                  <span className="subtask-completed-date">
+                                    Completed: {new Date(subtask.updated_at).toLocaleDateString()}
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                            <div className="subtask-actions">
+                              <button 
+                                className="btn-icon edit-btn"
+                                onClick={() => handleEditSubtask(subtask)}
+                                title="Edit subtask"
+                              >
+                                <FaEdit />
+                              </button>
+                              <button 
+                                className="btn-icon delete-btn"
+                                onClick={() => handleDeleteSubtask(selectedTaskModal.id, subtask.id)}
+                                title="Delete subtask"
+                              >
+                                <FaTrash />
+                              </button>
+                            </div>
+                          </>
+                        )}
                       </div>
                     ))}
                     {(subtasks[selectedTaskModal.id] || []).length === 0 && !loadingSubtasks[selectedTaskModal.id] && (
@@ -2393,8 +2534,7 @@ const Tasks = ({ filter, showNewTaskForm = false }) => {
                     
                     {loadingComments[selectedTaskModal.id] ? (
                       <div className="loading">Loading comments...</div>
-                    ) : (
-                      <div className="comments-list">                        {(comments[selectedTaskModal.id] || []).map(comment => (
+                    ) : (                      <div className="comments-list">                        {(comments[selectedTaskModal.id] || []).map(comment => (
                           <div key={comment.id} className="comment-item">
                             <div className="comment-header">
                               <div className="comment-author">
@@ -2404,15 +2544,52 @@ const Tasks = ({ filter, showNewTaskForm = false }) => {
                               </div>
                               <div className="comment-date">{formatRelativeTime(comment.created_at || comment.createdAt)}</div>
                             </div>
-                            <div className="comment-text">{comment.comment}</div>
-                            <div className="comment-actions">
-                              <button 
-                                className="btn-link delete-comment"
-                                onClick={() => handleDeleteComment(selectedTaskModal.id, comment.id)}
-                              >
-                                <FaTrash />
-                              </button>
-                            </div>
+                            {editingComment === comment.id ? (
+                              // Edit mode
+                              <div className="comment-edit-form">
+                                <textarea
+                                  value={editCommentText}
+                                  onChange={(e) => setEditCommentText(e.target.value)}
+                                  rows="3"
+                                  className="edit-comment-textarea"
+                                />
+                                <div className="comment-edit-actions">
+                                  <button 
+                                    className="btn-sm btn-secondary"
+                                    onClick={handleCancelCommentEdit}
+                                  >
+                                    <FaTimes /> Cancel
+                                  </button>
+                                  <button 
+                                    className="btn-sm btn-primary"
+                                    onClick={() => handleSaveCommentEdit(selectedTaskModal.id, comment.id)}
+                                  >
+                                    <FaCheck /> Save
+                                  </button>
+                                </div>
+                              </div>
+                            ) : (
+                              // View mode
+                              <>
+                                <div className="comment-text">{comment.comment}</div>
+                                <div className="comment-actions">
+                                  <button 
+                                    className="btn-icon edit-comment"
+                                    onClick={() => handleEditComment(comment)}
+                                    title="Edit comment"
+                                  >
+                                    <FaEdit />
+                                  </button>
+                                  <button 
+                                    className="btn-icon delete-comment"
+                                    onClick={() => handleDeleteComment(selectedTaskModal.id, comment.id)}
+                                    title="Delete comment"
+                                  >
+                                    <FaTrash />
+                                  </button>
+                                </div>
+                              </>
+                            )}
                           </div>
                         ))}
                         {(comments[selectedTaskModal.id] || []).length === 0 && !loadingComments[selectedTaskModal.id] && (

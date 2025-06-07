@@ -801,6 +801,119 @@ const apiService = {  // Auth services
       getByAssignee: (assigneeId) => apiClient.get(`/tasks/stats/assignee/${assigneeId}`),
       getOverview: () => apiClient.get('/tasks/stats/overview'),
       getProductivity: (params = {}) => apiClient.get('/tasks/stats/productivity', { params }),
+    }  },
+
+  // Calendar services
+  calendar: {
+    // Get all calendar events with optional filtering
+    getAll: (params = {}) => apiClient.get('/calendar/events', { params }),
+    
+    // Get specific calendar event by ID
+    getById: (id) => apiClient.get(`/calendar/events/${id}`),
+    
+    // Create new calendar event
+    create: (eventData) => {
+      console.log('📅 Creating calendar event:', eventData);
+      return apiClient.post('/calendar/events', eventData);
+    },
+    
+    // Update existing calendar event
+    update: (id, eventData) => {
+      console.log('📅 Updating calendar event:', { id, eventData });
+      return apiClient.put(`/calendar/events/${id}`, eventData);
+    },
+    
+    // Delete calendar event
+    delete: (id) => {
+      console.log('📅 Deleting calendar event:', id);
+      return apiClient.delete(`/calendar/events/${id}`);
+    },
+    
+    // Bulk operations for calendar events
+    bulkCreate: (eventsData) => {
+      console.log('📅 Bulk creating calendar events:', eventsData);
+      return apiClient.post('/calendar/events/bulk', { events: eventsData });
+    },
+    
+    bulkUpdate: (eventIds, data) => {
+      console.log('📅 Bulk updating calendar events:', { eventIds, data });
+      return apiClient.put('/calendar/events/bulk', { eventIds, ...data });
+    },
+    
+    bulkDelete: (eventIds) => {
+      console.log('📅 Bulk deleting calendar events:', eventIds);
+      return apiClient.delete('/calendar/events/bulk', { data: { eventIds } });
+    },
+    
+    // Get events for specific date range
+    getByDateRange: (startDate, endDate, params = {}) => {
+      const queryParams = {
+        startDate: startDate.toISOString(),
+        endDate: endDate.toISOString(),
+        ...params
+      };
+      return apiClient.get('/calendar/events/range', { params: queryParams });
+    },
+    
+    // Get events for specific date
+    getByDate: (date, params = {}) => {
+      const queryParams = {
+        date: date.toISOString().split('T')[0], // YYYY-MM-DD format
+        ...params
+      };
+      return apiClient.get('/calendar/events/date', { params: queryParams });
+    },
+    
+    // Get upcoming events
+    getUpcoming: (limit = 10, params = {}) => {
+      const queryParams = { limit, ...params };
+      return apiClient.get('/calendar/events/upcoming', { params: queryParams });
+    },
+    
+    // Toggle event completion status
+    toggleCompletion: (id) => {
+      console.log('📅 Toggling calendar event completion:', id);
+      return apiClient.patch(`/calendar/events/${id}/toggle-completion`);
+    },
+    
+    // Event categories management
+    categories: {
+      get: () => apiClient.get('/calendar/categories'),
+      create: (categoryData) => apiClient.post('/calendar/categories', categoryData),
+      update: (id, categoryData) => apiClient.put(`/calendar/categories/${id}`, categoryData),
+      delete: (id) => apiClient.delete(`/calendar/categories/${id}`),
+    },
+    
+    // Event recurrence management
+    recurrence: {
+      create: (eventId, recurrenceData) => apiClient.post(`/calendar/events/${eventId}/recurrence`, recurrenceData),
+      update: (eventId, recurrenceData) => apiClient.put(`/calendar/events/${eventId}/recurrence`, recurrenceData),
+      delete: (eventId) => apiClient.delete(`/calendar/events/${eventId}/recurrence`),
+    },
+    
+    // Event attendees management
+    attendees: {
+      get: (eventId) => apiClient.get(`/calendar/events/${eventId}/attendees`),
+      add: (eventId, attendeeData) => apiClient.post(`/calendar/events/${eventId}/attendees`, attendeeData),
+      update: (eventId, attendeeId, attendeeData) => apiClient.put(`/calendar/events/${eventId}/attendees/${attendeeId}`, attendeeData),
+      remove: (eventId, attendeeId) => apiClient.delete(`/calendar/events/${eventId}/attendees/${attendeeId}`),
+      updateStatus: (eventId, attendeeId, status) => apiClient.patch(`/calendar/events/${eventId}/attendees/${attendeeId}/status`, { status }),
+    },
+    
+    // Event reminders/notifications
+    reminders: {
+      get: (eventId) => apiClient.get(`/calendar/events/${eventId}/reminders`),
+      create: (eventId, reminderData) => apiClient.post(`/calendar/events/${eventId}/reminders`, reminderData),
+      update: (eventId, reminderId, reminderData) => apiClient.put(`/calendar/events/${eventId}/reminders/${reminderId}`, reminderData),
+      delete: (eventId, reminderId) => apiClient.delete(`/calendar/events/${eventId}/reminders/${reminderId}`),
+    },
+    
+    // Calendar statistics and analytics
+    stats: {
+      getOverview: () => apiClient.get('/calendar/stats/overview'),
+      getByCategory: (params = {}) => apiClient.get('/calendar/stats/category', { params }),
+      getByProject: (projectId) => apiClient.get(`/calendar/stats/project/${projectId}`),
+      getProductivity: (params = {}) => apiClient.get('/calendar/stats/productivity', { params }),
     }
   },
 

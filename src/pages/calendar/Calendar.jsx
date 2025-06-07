@@ -50,12 +50,17 @@ import { formatRelativeTime } from '../../utils/formatters';
 const Calendar = () => {
   const { user } = useAuth();
   const { success, error: showErrorNotification } = useNotification();
-    // State for calendar
+  // State for calendar
   const [currentDate, setCurrentDate] = useState(new Date());
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [view, setView] = useState('month'); // 'month', 'week', 'day', 'agenda'
   const [events, setEvents] = useState([]);
   const [filteredEvents, setFilteredEvents] = useState([]);
+  
+  // State for attendee management
+  const [isEditingAttendees, setIsEditingAttendees] = useState(false);
+  const [newAttendeeEmail, setNewAttendeeEmail] = useState('');
+  const [newAttendeeName, setNewAttendeeName] = useState('');  const [attendeesLoading, setAttendeesLoading] = useState(false);
   const [categories, setCategories] = useState([]);
   const [selectedCategories, setSelectedCategories] = useState([]);
   const [searchQuery, setSearchQuery] = useState('');
@@ -82,11 +87,11 @@ const Calendar = () => {
     color: '#8b5cf6'
   });
   
-  // Refs
-  const calendarRef = useRef(null);
+  // Refs  const calendarRef = useRef(null);
   const searchRef = useRef(null);
   const modalRef = useRef(null);
   const addEventModalRef = useRef(null);
+  const currentEventRef = useRef(null);
   // Fetch events data function
   const fetchEvents = async () => {
     setIsLoading(true);
@@ -217,8 +222,7 @@ const Calendar = () => {
   useEffect(() => {
     fetchEvents();
   }, []);
-  
-  // Filter events based on search and categories
+    // Filter events based on search and categories
   useEffect(() => {
     let filtered = events;
     
@@ -239,12 +243,34 @@ const Calendar = () => {
     
     setFilteredEvents(filtered);
   }, [events, searchQuery, selectedCategories]);
-  
-  // Handle click outside of modal
+
+  // Monitor currentEvent attendee state changes for debugging
+  useEffect(() => {
+    if (currentEvent) {
+      console.log('🔍 ATTENDEE STATE MONITOR - currentEvent changed:', {
+        eventId: currentEvent.id,
+        originalBackendId: currentEvent.originalBackendId,
+        attendeesWithStatus: currentEvent.attendeesWithStatus?.length || 0,
+        attendeesWithStatusData: currentEvent.attendeesWithStatus,
+        attendees: currentEvent.attendees?.length || 0,
+        attendeesData: currentEvent.attendees,
+        lastAttendeesUpdate: currentEvent.lastAttendeesUpdate,
+        timestamp: new Date().toISOString()
+      });
+      
+      // Update the ref for immediate access
+      currentEventRef.current = currentEvent;
+    }
+  }, [currentEvent?.attendeesWithStatus, currentEvent?.attendees, currentEvent?.lastAttendeesUpdate]);
+    // Handle click outside of modal
   useEffect(() => {
     const handleClickOutside = (event) => {
       if (modalRef.current && !modalRef.current.contains(event.target)) {
         setShowEventModal(false);
+        // Reset attendee editing state when modal closes
+        setIsEditingAttendees(false);
+        setNewAttendeeEmail('');
+        setNewAttendeeName('');
       }
       if (addEventModalRef.current && !addEventModalRef.current.contains(event.target)) {
         setShowAddEventModal(false);
@@ -349,11 +375,13 @@ const Calendar = () => {
             updatedAt: detailedEvent.updated_at ? new Date(detailedEvent.updated_at) : null,
             createdBy: detailedEvent.created_by || null
           };
-          
-          // Update the current event with detailed information
+            // Update the current event with detailed information
           setCurrentEvent(enrichedEvent);
-          
-          console.log('✅ Event details fetched successfully:', enrichedEvent);
+            console.log('✅ Event details fetched successfully:', enrichedEvent);
+            // Fetch attendees for the event if it's a backend event
+          if (enrichedEvent.isBackendEvent && enrichedEvent.originalBackendId) {
+            await fetchEventAttendees(enrichedEvent.originalBackendId, enrichedEvent);
+          }
           
         } catch (detailError) {
           console.error('❌ Error fetching event details (using basic event data):', detailError);
@@ -361,6 +389,16 @@ const Calendar = () => {
         }
       } else {
         console.log('📅 Using basic event data (local/sample event or invalid backend ID)');
+          // Even for basic events, try to fetch attendees if it might be a backend event
+        if (event.id && typeof event.id !== 'string' || 
+            (typeof event.id === 'string' && 
+             !event.id.startsWith('sample-') && 
+             !event.id.startsWith('local-') && 
+             !event.id.startsWith('fallback-') && 
+             !event.id.startsWith('backend-undefined-'))) {
+          console.log('📅 Attempting to fetch attendees for potential backend event:', event.id);
+          await fetchEventAttendees(event.id, event);
+        }
       }
       
     } catch (error) {
@@ -892,8 +930,7 @@ const Calendar = () => {
       setEvents(prevEvents => prevEvents.filter(event => event.id !== currentEvent.id));
       setShowEventModal(false);
       
-      success(`Event "${currentEvent.title}" deleted locally (Invalid event ID)`);
-      console.log('✅ Event with invalid ID deleted locally');
+      success(`Event "${currentEvent.title}" deleted locally (Invalid event ID)`);        console.log('✅ Event with invalid ID deleted locally');
       
     } catch (error) {
       console.error('❌ Error in deleteEvent function:', error);
@@ -910,6 +947,813 @@ const Calendar = () => {
         setError('Failed to delete event. Please try again.');
         showErrorNotification('Failed to delete event. Please try again.');
       }
+    }
+  };
+
+  // Attendee Management Functions  // Fetch attendees for a specific event
+  const fetchEventAttendees = async (eventId, eventData = null) => {
+    // Use provided eventData or fall back to currentEvent
+    const targetEvent = eventData || currentEvent;
+    
+    // Early return if no event data available
+    if (!targetEvent) {
+      console.log('📅 Skipping attendee fetch - no event data available');
+      return;
+    }
+    
+    // Only skip if it's explicitly a local/sample event (string-based checks)
+    const eventIdStr = String(eventId);
+    if (!eventId || 
+        (eventIdStr.startsWith('sample-') || 
+         eventIdStr.startsWith('local-') || 
+         eventIdStr.startsWith('fallback-') || 
+         eventIdStr.startsWith('backend-undefined-'))) {
+      console.log('📅 Skipping attendee fetch for local/sample event:', eventId);
+      return;
+    }
+    
+    // Convert numeric eventId to string for API calls
+    const apiEventId = String(eventId);
+
+    try {
+      setAttendeesLoading(true);
+      console.log('📅 Fetching attendees for event:', eventId);
+        // Use original backend ID if available, otherwise use the provided eventId
+      const fetchId = currentEvent?.originalBackendId || apiEventId;
+      const response = await apiService.calendar.attendees.get(fetchId);
+      
+      console.log('📅 Attendees API response:', {
+        status: response.status,
+        data: response.data,
+        fullResponse: response
+      });
+      
+      let attendeesData = [];
+      if (response.data && response.data.data) {
+        attendeesData = response.data.data;
+      } else if (response.data) {
+        attendeesData = response.data;
+      }
+      
+      // Ensure attendeesData is an array
+      if (!Array.isArray(attendeesData)) {
+        console.error('📅 Expected array but got:', typeof attendeesData, attendeesData);
+        
+        // Try to extract array from different possible structures
+        if (attendeesData && typeof attendeesData === 'object') {
+          // Check if it's wrapped in another object
+          if (attendeesData.attendees && Array.isArray(attendeesData.attendees)) {
+            attendeesData = attendeesData.attendees;
+          } else if (attendeesData.data && Array.isArray(attendeesData.data)) {
+            attendeesData = attendeesData.data;
+          } else {
+            // Convert object to array if it has numeric keys
+            const values = Object.values(attendeesData);
+            if (values.length > 0 && values[0] && typeof values[0] === 'object') {
+              attendeesData = values;
+            } else {
+              console.warn('📅 Cannot parse attendees data, using empty array');
+              attendeesData = [];
+            }
+          }
+        } else {
+          console.warn('📅 Invalid attendees data format, using empty array');
+          attendeesData = [];
+        }
+      }
+      
+      console.log('📅 Processed attendees data:', attendeesData);
+      
+      // Normalize attendee data structure for consistent frontend display
+      const normalizedAttendees = attendeesData.map(attendee => ({
+        id: attendee.id || `attendee-${Date.now()}-${Math.random()}`,
+        name: attendee.name || attendee.email || 'Unknown Attendee',
+        email: attendee.email || '',
+        status: attendee.status || 'pending',
+        // Preserve any additional backend fields
+        ...attendee
+      }));
+        console.log('📅 Raw attendees from backend:', attendeesData);
+      console.log('📅 Normalized attendees for frontend:', normalizedAttendees);
+        // Update current event with fetched attendees
+      if (currentEvent) {
+        console.log('📅 Before state update - currentEvent.attendeesWithStatus:', currentEvent.attendeesWithStatus);
+        console.log('📅 About to set normalizedAttendees:', normalizedAttendees);
+        
+        setCurrentEvent(prev => {
+          const updatedEvent = {
+            ...prev,
+            attendeesWithStatus: normalizedAttendees,
+            attendees: normalizedAttendees.map(att => att.email || att.name),
+            // Add a timestamp to force React to recognize this as a new state
+            lastAttendeesUpdate: Date.now()
+          };
+          console.log('📅 State update - prev event:', prev);
+          console.log('📅 State update - new event:', updatedEvent);
+          return updatedEvent;
+        });
+        
+        // Also store in a ref for immediate access without waiting for state update
+        currentEventRef.current = {
+          ...currentEvent,
+          attendeesWithStatus: normalizedAttendees,
+          attendees: normalizedAttendees.map(att => att.email || att.name),
+          lastAttendeesUpdate: Date.now()
+        };
+      }
+      
+      // Also update the events list to keep it in sync
+      if (currentEvent && currentEvent.id) {
+        setEvents(prevEvents => 
+          prevEvents.map(event => 
+            event.id === currentEvent.id 
+              ? { 
+                  ...event, 
+                  attendeesWithStatus: normalizedAttendees,
+                  attendees: normalizedAttendees.map(att => att.email || att.name)
+                }
+              : event
+          )
+        );
+      }
+      
+      console.log('✅ Attendees fetched and synchronized successfully:', attendeesData);
+      
+    } catch (error) {
+      console.error('❌ Error fetching attendees:', error);
+      // Don't show error notification, just log it
+    } finally {
+      setAttendeesLoading(false);
+    }
+  };  // User lookup function to check if email belongs to existing user
+  const lookupUserByEmail = async (email) => {
+    try {
+      // Try to search for user by email - this would be the ideal implementation
+      // For now, we'll implement a fallback approach since no user lookup API is available
+      console.log('📅 Attempting user lookup for email:', email);
+      
+      // If you have a users API endpoint, you could use something like:
+      // const response = await apiService.users.search({ email });
+      // return response.data?.user_id || null;
+      
+      // Since no user lookup API is available, return null for external attendees
+      return null;
+    } catch (error) {
+      console.log('📅 User lookup failed (expected for external attendees):', error.message);
+      return null;
+    }
+  };
+
+  // Add new attendee to event
+  const addAttendeeToEvent = async () => {
+    if (!currentEvent || !newAttendeeEmail.trim()) return;
+    
+    const eventId = currentEvent.originalBackendId || currentEvent.id;
+    
+    console.log('📅 Adding attendee - Event details:', {
+      currentEventId: currentEvent.id,
+      originalBackendId: currentEvent.originalBackendId,
+      isBackendEvent: currentEvent.isBackendEvent,
+      finalEventId: eventId
+    });
+    
+    // Validate eventId
+    if (!eventId || eventId === 'undefined' || eventId === null) {
+      console.error('📅 Invalid event ID for attendee addition:', eventId);
+      success(`Attendee added locally (invalid event ID)`);
+      
+      // Handle as local event
+      const newAttendee = {
+        id: `local-attendee-${Date.now()}`,
+        name: newAttendeeName.trim() || newAttendeeEmail.trim(),
+        email: newAttendeeEmail.trim(),
+        status: 'pending'
+      };
+      
+      setCurrentEvent(prev => ({
+        ...prev,
+        attendeesWithStatus: [...(prev.attendeesWithStatus || []), newAttendee],
+        attendees: [...(prev.attendees || []), newAttendee.email]
+      }));
+      
+      setEvents(prevEvents => 
+        prevEvents.map(event => 
+          event.id === currentEvent.id 
+            ? { 
+                ...event, 
+                attendeesWithStatus: [...(event.attendeesWithStatus || []), newAttendee],
+                attendees: [...(event.attendees || []), newAttendee.email]
+              }
+            : event
+        )
+      );
+      
+      setNewAttendeeEmail('');
+      setNewAttendeeName('');
+      return;
+    }
+    
+    // Check if this is explicitly a local/sample event
+    const isExplicitlyLocalEvent = eventId && 
+                                   typeof eventId === 'string' && 
+                                   (eventId.startsWith('sample-') || 
+                                    eventId.startsWith('local-'));
+    
+    if (isExplicitlyLocalEvent) {
+      console.log('📅 Handling explicitly local/sample event for attendee addition');
+      
+      // Handle local event - update only in local state
+      const newAttendee = {
+        id: `local-attendee-${Date.now()}`,
+        name: newAttendeeName.trim() || newAttendeeEmail.trim(),
+        email: newAttendeeEmail.trim(),
+        status: 'pending'
+      };
+      
+      setCurrentEvent(prev => ({
+        ...prev,
+        attendeesWithStatus: [...(prev.attendeesWithStatus || []), newAttendee],
+        attendees: [...(prev.attendees || []), newAttendee.email]
+      }));
+      
+      // Update in events list
+      setEvents(prevEvents => 
+        prevEvents.map(event => 
+          event.id === currentEvent.id 
+            ? { 
+                ...event, 
+                attendeesWithStatus: [...(event.attendeesWithStatus || []), newAttendee],
+                attendees: [...(event.attendees || []), newAttendee.email]
+              }
+            : event
+        )
+      );
+      
+      setNewAttendeeEmail('');
+      setNewAttendeeName('');
+      success(`Attendee added locally (local event)`);
+      return;
+    }    // For all other events, try backend first
+    try {
+      setAttendeesLoading(true);
+      console.log('📅 Attempting backend attendee addition for event:', eventId);
+      
+      // Validate email format
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      if (!emailRegex.test(newAttendeeEmail.trim())) {
+        throw new Error('Invalid email format');
+      }
+
+      // Try to lookup user by email to get user_id
+      console.log('📅 Looking up user by email for backend API...');
+      const userId = await lookupUserByEmail(newAttendeeEmail.trim());
+      
+      // Prepare attendee data for backend API
+      const attendeeData = {
+        name: newAttendeeName.trim() || newAttendeeEmail.trim(),
+        email: newAttendeeEmail.trim(),
+        status: 'pending'
+      };
+      
+      // Include user_id only if we found an existing user
+      if (userId) {
+        attendeeData.user_id = userId;
+        // Also try attendeeUserId as an alternative field name
+        attendeeData.attendeeUserId = userId;
+        console.log('📅 Found existing user, including user_id:', userId);
+      } else {
+        console.log('📅 External attendee - no user_id available');
+      }
+      
+      // Ensure name is not empty
+      if (!attendeeData.name || attendeeData.name.length === 0) {
+        attendeeData.name = attendeeData.email.split('@')[0]; // Use email prefix as fallback name
+      }
+      
+      console.log('📅 Attendee data being sent to backend:', {
+        eventId,
+        attendeeData,
+        url: `/calendar/events/${eventId}/attendees`
+      });
+        const response = await apiService.calendar.attendees.add(eventId, attendeeData);
+      
+      console.log('📅 Backend response for attendee addition:', {
+        status: response.status,
+        data: response.data,
+        fullResponse: response
+      });
+      
+      let newAttendee;
+      if (response.data && response.data.data) {
+        newAttendee = response.data.data;
+      } else if (response.data) {
+        newAttendee = response.data;
+      } else {
+        newAttendee = attendeeData;
+      }
+      
+      // Ensure the attendee object has the required fields for display
+      newAttendee = {
+        id: newAttendee.id || `attendee-${Date.now()}`,
+        name: newAttendee.name || attendeeData.name,
+        email: newAttendee.email || attendeeData.email,
+        status: newAttendee.status || attendeeData.status || 'pending',
+        // Preserve any additional backend fields
+        ...newAttendee
+      };
+      
+      console.log('📅 Processed attendee for frontend:', newAttendee);
+      
+      // Update current event
+      setCurrentEvent(prev => ({
+        ...prev,
+        attendeesWithStatus: [...(prev.attendeesWithStatus || []), newAttendee],
+        attendees: [...(prev.attendees || []), newAttendee.email]
+      }));
+      
+      // Update events list
+      setEvents(prevEvents => 
+        prevEvents.map(event => 
+          event.id === currentEvent.id 
+            ? { 
+                ...event, 
+                attendeesWithStatus: [...(event.attendeesWithStatus || []), newAttendee],
+                attendees: [...(event.attendees || []), newAttendee.email]
+              }
+            : event
+        )
+      );
+      
+      setNewAttendeeEmail('');
+      setNewAttendeeName('');
+      success(`Attendee "${newAttendee.name}" added successfully!`);
+      console.log('✅ Attendee added successfully via backend');
+    } catch (error) {
+      console.error('❌ Backend attendee addition failed:', error);
+      
+      // Log detailed error information
+      if (error.response) {
+        console.error('📅 Backend error response:', {
+          status: error.response.status,
+          data: error.response.data,
+          headers: error.response.headers
+        });
+        
+        // Show more specific error message if available
+        const errorMessage = error.response.data?.message || 
+                            error.response.data?.error || 
+                            `Backend error: ${error.response.status}`;
+        console.error('📅 Specific error:', errorMessage);
+      } else if (error.request) {
+        console.error('📅 No response received:', error.request);
+      } else {
+        console.error('📅 Error setting up request:', error.message);
+      }
+      
+      // Fall back to local addition if backend fails
+      console.log('🔄 Backend failed, falling back to local attendee addition...');
+      
+      const newAttendee = {
+        id: `local-attendee-${Date.now()}`,
+        name: newAttendeeName.trim() || newAttendeeEmail.trim(),
+        email: newAttendeeEmail.trim(),
+        status: 'pending'
+      };
+      
+      setCurrentEvent(prev => ({
+        ...prev,
+        attendeesWithStatus: [...(prev.attendeesWithStatus || []), newAttendee],
+        attendees: [...(prev.attendees || []), newAttendee.email]
+      }));
+      
+      // Update in events list
+      setEvents(prevEvents => 
+        prevEvents.map(event => 
+          event.id === currentEvent.id 
+            ? { 
+                ...event, 
+                attendeesWithStatus: [...(event.attendeesWithStatus || []), newAttendee],
+                attendees: [...(event.attendees || []), newAttendee.email]
+              }
+            : event
+        )
+      );
+      
+      setNewAttendeeEmail('');
+      setNewAttendeeName('');
+      success(`Attendee added locally (backend failed)`);
+    } finally {
+      setAttendeesLoading(false);
+    }
+  };  // Remove attendee from event
+  const removeAttendeeFromEvent = async (attendeeId, attendeeIdentifier) => {
+    if (!currentEvent) return;
+    
+    const eventId = currentEvent.originalBackendId || currentEvent.id;
+    
+    console.log('📅 Removing attendee - Event details:', {
+      currentEventId: currentEvent.id,
+      originalBackendId: currentEvent.originalBackendId,
+      isBackendEvent: currentEvent.isBackendEvent,
+      finalEventId: eventId,
+      attendeeId,
+      attendeeIdentifier
+    });
+      // Check if attendee exists in current event data
+    const attendeeExistsInStatus = currentEvent.attendeesWithStatus?.some(att => 
+      att.id === attendeeId || att.email === attendeeIdentifier
+    );
+    const attendeeExistsInBasic = currentEvent.attendees?.includes(attendeeIdentifier);
+    
+    // Force refresh if attendeesWithStatus is empty but attendees exist (state sync issue)
+    if (!attendeeExistsInStatus && attendeeExistsInBasic && 
+        (!currentEvent.attendeesWithStatus || currentEvent.attendeesWithStatus.length === 0) &&
+        currentEvent.attendees && currentEvent.attendees.length > 0) {
+      console.log('📅 State synchronization issue detected - attendeesWithStatus empty but attendees exist, force refreshing...');
+      
+      try {
+        await fetchEventAttendees(eventId, currentEvent);
+        // After refresh, check again
+        const refreshedEvent = currentEventRef.current || currentEvent;
+        const attendeeExistsAfterRefresh = refreshedEvent.attendeesWithStatus?.some(att => 
+          att.id === attendeeId || att.email === attendeeIdentifier
+        );
+        
+        if (attendeeExistsAfterRefresh) {
+          console.log('📅 Attendee found after refresh, continuing with removal...');
+          // Continue with the removal process after refresh
+        } else {
+          console.warn('📅 Attendee still not found after refresh');
+          showErrorNotification('Attendee not found in current event');
+          return;
+        }
+      } catch (refreshError) {
+        console.error('📅 Failed to refresh attendees:', refreshError);
+        showErrorNotification('Failed to refresh attendee data');
+        return;
+      }
+    } else if (!attendeeExistsInStatus && !attendeeExistsInBasic) {
+      // Both arrays checked and attendee not found
+      console.warn('📅 Attendee not found in current event data:', {
+        attendeeId,
+        attendeeIdentifier,
+        currentAttendees: currentEvent.attendees,
+        currentAttendeesWithStatus: currentEvent.attendeesWithStatus
+      });
+      showErrorNotification('Attendee not found in current event');
+      return;
+    }
+    
+    // Check if this is explicitly a local/sample event
+    const isExplicitlyLocalEvent = eventId && 
+                                   typeof eventId === 'string' && 
+                                   (eventId.startsWith('sample-') || 
+                                    eventId.startsWith('local-'));
+    
+    if (isExplicitlyLocalEvent) {
+      console.log('📅 Handling explicitly local/sample event for attendee removal');
+      
+      // Handle local event - update only in local state
+      setCurrentEvent(prev => ({
+        ...prev,
+        attendeesWithStatus: (prev.attendeesWithStatus || []).filter(att => 
+          att.id !== attendeeId && att.email !== attendeeIdentifier
+        ),
+        attendees: (prev.attendees || []).filter(email => email !== attendeeIdentifier)
+      }));
+      
+      // Update in events list
+      setEvents(prevEvents => 
+        prevEvents.map(event => 
+          event.id === currentEvent.id 
+            ? { 
+                ...event, 
+                attendeesWithStatus: (event.attendeesWithStatus || []).filter(att => 
+                  att.id !== attendeeId && att.email !== attendeeIdentifier
+                ),
+                attendees: (event.attendees || []).filter(email => email !== attendeeIdentifier)
+              }
+            : event
+        )
+      );
+      
+      success(`Attendee removed locally`);
+      return;
+    }    // For all other events, try backend first
+    try {
+      setAttendeesLoading(true);
+      console.log('📅 Attempting backend attendee removal for event:', eventId, attendeeId);
+        // Check if this is a synthetic attendee ID (like "basic-0", "basic-1", etc.)
+      let actualAttendeeId = attendeeId;
+      if (typeof attendeeId === 'string' && attendeeId.startsWith('basic-')) {
+        console.log('📅 Detected synthetic attendee ID, looking up real ID by email:', attendeeIdentifier);
+        console.log('📅 Current event attendeesWithStatus:', currentEvent.attendeesWithStatus);
+        console.log('📅 Current event attendees:', currentEvent.attendees);
+        
+        // Get the most up-to-date event data (state or ref)
+        const currentEventData = currentEventRef.current || currentEvent;
+        console.log('📅 Using event data from:', currentEventRef.current ? 'ref (latest)' : 'state');
+        console.log('📅 Event data attendeesWithStatus:', currentEventData.attendeesWithStatus);
+        
+        // Try to find the real attendee ID from the attendeesWithStatus array
+        const attendeeWithStatus = currentEventData.attendeesWithStatus?.find(att => 
+          att.email === attendeeIdentifier
+        );
+        
+        console.log('📅 Found attendee with status:', attendeeWithStatus);
+        
+        if (attendeeWithStatus && attendeeWithStatus.id) {
+          actualAttendeeId = attendeeWithStatus.id;
+          console.log('📅 Found real attendee ID:', actualAttendeeId);        } else {
+          // If we can't find the real ID, we need to fetch attendees first
+          console.log('📅 Could not find real attendee ID, fetching attendees from backend...');
+          console.log('📅 Available attendeesWithStatus for lookup:', currentEvent.attendeesWithStatus?.map(att => ({
+            id: att.id,
+            email: att.email,
+            name: att.name
+          })));
+          
+          try {
+            const response = await apiService.calendar.attendees.get(eventId);
+            
+            console.log('📅 Attendees API response for ID lookup:', {
+              status: response.status,
+              data: response.data,
+              fullResponse: response
+            });
+            
+            let attendeesData = [];
+            if (response.data && response.data.data) {
+              attendeesData = response.data.data;
+            } else if (response.data) {
+              attendeesData = response.data;
+            }
+            
+            // Ensure attendeesData is an array
+            if (!Array.isArray(attendeesData)) {
+              console.error('📅 Expected array but got:', typeof attendeesData, attendeesData);
+              
+              // Try to extract array from different possible structures
+              if (attendeesData && typeof attendeesData === 'object') {
+                // Check if it's wrapped in another object
+                if (attendeesData.attendees && Array.isArray(attendeesData.attendees)) {
+                  attendeesData = attendeesData.attendees;
+                } else if (attendeesData.data && Array.isArray(attendeesData.data)) {
+                  attendeesData = attendeesData.data;
+                } else {
+                  // Convert object to array if it has numeric keys
+                  const values = Object.values(attendeesData);
+                  if (values.length > 0 && values[0] && typeof values[0] === 'object') {
+                    attendeesData = values;
+                  } else {
+                    throw new Error('Cannot parse attendees data structure');
+                  }
+                }
+              } else {
+                throw new Error('Invalid attendees data format');
+              }
+            }
+            
+            console.log('📅 Processed attendees data:', attendeesData);
+              const matchingAttendee = attendeesData.find(att => att.email === attendeeIdentifier);
+            if (matchingAttendee && matchingAttendee.id) {
+              actualAttendeeId = matchingAttendee.id;
+              console.log('📅 Found real attendee ID from backend:', actualAttendeeId);
+            } else {
+              console.warn('📅 Attendee not found in backend, this appears to be a local-only attendee:', attendeeIdentifier);
+              console.log('📅 Available attendees in backend:', attendeesData.map(att => ({ id: att.id, email: att.email })));
+              
+              // This attendee exists only locally, handle it as a local removal
+              console.log('📅 Treating as local-only attendee removal');
+              
+              // Update current event - remove locally
+              setCurrentEvent(prev => ({
+                ...prev,
+                attendeesWithStatus: (prev.attendeesWithStatus || []).filter(att => 
+                  att.id !== attendeeId && att.email !== attendeeIdentifier
+                ),
+                attendees: (prev.attendees || []).filter(email => email !== attendeeIdentifier)
+              }));
+              
+              // Update events list
+              setEvents(prevEvents => 
+                prevEvents.map(event => 
+                  event.id === currentEvent.id 
+                    ? { 
+                        ...event, 
+                        attendeesWithStatus: (event.attendeesWithStatus || []).filter(att => 
+                          att.id !== attendeeId && att.email !== attendeeIdentifier
+                        ),
+                        attendees: (event.attendees || []).filter(email => email !== attendeeIdentifier)
+                      }
+                    : event
+                )
+              );
+              
+              success(`Attendee removed locally (not found in backend)`);
+              console.log('✅ Local-only attendee removed successfully');
+              return; // Exit the function early
+            }          } catch (fetchError) {
+            console.error('📅 Failed to fetch attendees for ID lookup:', fetchError);
+            
+            // If we can't fetch attendees from backend, treat as local-only removal
+            console.log('📅 Cannot fetch attendees from backend, treating as local-only removal');
+            
+            // Update current event - remove locally
+            setCurrentEvent(prev => ({
+              ...prev,
+              attendeesWithStatus: (prev.attendeesWithStatus || []).filter(att => 
+                att.id !== attendeeId && att.email !== attendeeIdentifier
+              ),
+              attendees: (prev.attendees || []).filter(email => email !== attendeeIdentifier)
+            }));
+            
+            // Update events list
+            setEvents(prevEvents => 
+              prevEvents.map(event => 
+                event.id === currentEvent.id 
+                  ? { 
+                      ...event, 
+                      attendeesWithStatus: (event.attendeesWithStatus || []).filter(att => 
+                        att.id !== attendeeId && att.email !== attendeeIdentifier
+                      ),
+                      attendees: (event.attendees || []).filter(email => email !== attendeeIdentifier)
+                    }
+                  : event
+              )
+            );
+            
+            success(`Attendee removed locally (backend fetch failed)`);
+            console.log('✅ Local removal completed due to backend fetch failure');
+            return; // Exit the function early
+          }
+        }
+      }
+        await apiService.calendar.attendees.remove(eventId, actualAttendeeId);
+      
+      // Update current event - use actualAttendeeId for proper filtering
+      setCurrentEvent(prev => ({
+        ...prev,
+        attendeesWithStatus: (prev.attendeesWithStatus || []).filter(att => 
+          att.id !== actualAttendeeId && att.id !== attendeeId
+        ),
+        attendees: (prev.attendees || []).filter(email => email !== attendeeIdentifier)
+      }));
+      
+      // Update events list
+      setEvents(prevEvents => 
+        prevEvents.map(event => 
+          event.id === currentEvent.id 
+            ? { 
+                ...event, 
+                attendeesWithStatus: (event.attendeesWithStatus || []).filter(att => 
+                  att.id !== actualAttendeeId && att.id !== attendeeId
+                ),
+                attendees: (event.attendees || []).filter(email => email !== attendeeIdentifier)
+              }
+            : event
+        )
+      );
+      
+      success(`Attendee removed successfully!`);
+      console.log('✅ Attendee removed successfully via backend');
+        } catch (error) {
+      console.error('❌ Backend attendee removal failed:', error);
+      
+      // Log detailed error information for debugging
+      if (error.response) {
+        console.error('📅 Backend error response:', {
+          status: error.response.status,
+          data: error.response.data,
+          headers: error.response.headers,
+          eventId,
+          attendeeId,
+          actualAttendeeId: attendeeId.startsWith('basic-') ? 'looked up from backend' : attendeeId
+        });
+        
+        // Show more specific error message if available
+        const errorMessage = error.response.data?.message || 
+                            error.response.data?.error || 
+                            `Backend error: ${error.response.status}`;
+        console.error('📅 Specific error:', errorMessage);
+        
+        if (error.response.status === 404) {
+          console.error('📅 404 Error: Attendee or event not found on backend');
+        }
+      } else if (error.request) {
+        console.error('📅 No response received:', error.request);
+      } else {
+        console.error('📅 Error setting up request:', error.message);
+      }
+      
+      // Fall back to local removal if backend fails
+      console.log('🔄 Backend failed, falling back to local attendee removal...');
+      
+      setCurrentEvent(prev => ({
+        ...prev,
+        attendeesWithStatus: (prev.attendeesWithStatus || []).filter(att => 
+          att.id !== attendeeId && att.email !== attendeeIdentifier
+        ),
+        attendees: (prev.attendees || []).filter(email => email !== attendeeIdentifier)
+      }));
+      
+      // Update in events list
+      setEvents(prevEvents => 
+        prevEvents.map(event => 
+          event.id === currentEvent.id 
+            ? { 
+                ...event, 
+                attendeesWithStatus: (event.attendeesWithStatus || []).filter(att => 
+                  att.id !== attendeeId && att.email !== attendeeIdentifier
+                ),
+                attendees: (event.attendees || []).filter(email => email !== attendeeIdentifier)
+              }
+            : event
+        )
+      );
+      
+      success(`Attendee removed locally (backend failed)`);
+    } finally {
+      setAttendeesLoading(false);
+    }
+  };
+
+  // Update attendee status
+  const updateAttendeeStatus = async (attendeeId, newStatus, attendeeIdentifier) => {
+    if (!currentEvent) return;
+    
+    const eventId = currentEvent.originalBackendId || currentEvent.id;
+    
+    // Check if this is a local/sample event
+    if (!eventId || typeof eventId !== 'string' || 
+        eventId.startsWith('sample-') || eventId.startsWith('local-') || 
+        eventId.startsWith('fallback-') || eventId.startsWith('backend-undefined-')) {
+      
+      // Handle local event - update only in local state
+      setCurrentEvent(prev => ({
+        ...prev,
+        attendeesWithStatus: (prev.attendeesWithStatus || []).map(att => 
+          att.id === attendeeId || att.email === attendeeIdentifier
+            ? { ...att, status: newStatus }
+            : att
+        )
+      }));
+      
+      // Update in events list
+      setEvents(prevEvents => 
+        prevEvents.map(event => 
+          event.id === currentEvent.id 
+            ? { 
+                ...event, 
+                attendeesWithStatus: (event.attendeesWithStatus || []).map(att => 
+                  att.id === attendeeId || att.email === attendeeIdentifier
+                    ? { ...att, status: newStatus }
+                    : att
+                )
+              }
+            : event
+        )
+      );
+      
+      success(`Attendee status updated locally to ${newStatus}`);
+      return;
+    }
+
+    try {
+      setAttendeesLoading(true);
+      console.log('📅 Updating attendee status:', eventId, attendeeId, newStatus);
+      
+      await apiService.calendar.attendees.updateStatus(eventId, attendeeId, newStatus);
+      
+      // Update current event
+      setCurrentEvent(prev => ({
+        ...prev,
+        attendeesWithStatus: (prev.attendeesWithStatus || []).map(att => 
+          att.id === attendeeId ? { ...att, status: newStatus } : att
+        )
+      }));
+      
+      // Update events list
+      setEvents(prevEvents => 
+        prevEvents.map(event => 
+          event.id === currentEvent.id 
+            ? { 
+                ...event, 
+                attendeesWithStatus: (event.attendeesWithStatus || []).map(att => 
+                  att.id === attendeeId ? { ...att, status: newStatus } : att
+                )
+              }
+            : event
+        )
+      );
+      
+      success(`Attendee status updated to ${newStatus}!`);
+      
+    } catch (error) {
+      console.error('❌ Error updating attendee status:', error);
+      showErrorNotification('Failed to update attendee status. Please try again.');
+    } finally {
+      setAttendeesLoading(false);
     }
   };
   
@@ -1325,8 +2169,12 @@ const Calendar = () => {
             <div className="event-modal-category">
               {getCategoryIcon(currentEvent.category)}
               <span>{currentEvent.category.charAt(0).toUpperCase() + currentEvent.category.slice(1)}</span>
-            </div>
-            <button className="event-modal-close" onClick={() => setShowEventModal(false)}>
+            </div>            <button className="event-modal-close" onClick={() => {
+              setShowEventModal(false);
+              setIsEditingAttendees(false);
+              setNewAttendeeEmail('');
+              setNewAttendeeName('');
+            }}>
               <FaTimes />
             </button>
           </div>
@@ -1441,45 +2289,155 @@ const Calendar = () => {
                     <div className="detail-value">{currentEvent.location}</div>
                   </div>
                 </div>
-              )}
-                {/* Enhanced Attendees with Status */}
+              )}              {/* Enhanced Attendees with Management */}
               {((currentEvent.attendeesWithStatus && currentEvent.attendeesWithStatus.length > 0) || 
-                (currentEvent.attendees && currentEvent.attendees.length > 0)) && (
+                (currentEvent.attendees && currentEvent.attendees.length > 0) || 
+                isEditingAttendees) && (
                 <div className="detail-item">
                   <div className="detail-icon">
                     <FaUserFriends />
                   </div>
                   <div className="detail-content">
-                    <span className="detail-label">Attendees</span>
+                    <div className="detail-header">
+                      <span className="detail-label">Attendees</span>
+                      <button 
+                        className="btn-icon-small" 
+                        onClick={() => setIsEditingAttendees(!isEditingAttendees)}
+                        disabled={attendeesLoading}
+                      >
+                        {isEditingAttendees ? <FaTimes /> : <FaEdit />}
+                      </button>
+                    </div>
+                    
+                    {attendeesLoading && (
+                      <div className="loading-spinner-small"></div>
+                    )}
+                    
                     <div className="attendees-list">
                       {(() => {
                         try {
                           if (currentEvent.attendeesWithStatus && currentEvent.attendeesWithStatus.length > 0) {
                             return currentEvent.attendeesWithStatus.map((attendee, index) => (
-                              <div key={index} className="attendee-with-status">
-                                <span className="attendee-name">
-                                  {attendee?.name || attendee?.email || 'Unknown Attendee'}
-                                </span>
-                                <span className={`attendee-status status-${attendee?.status || 'pending'}`}>
-                                  {attendee?.status ? attendee.status.charAt(0).toUpperCase() + attendee.status.slice(1) : 'Pending'}
-                                </span>
+                              <div key={attendee.id || index} className="attendee-with-status">
+                                <div className="attendee-info">
+                                  <span className="attendee-name">
+                                    {attendee?.name || attendee?.email || 'Unknown Attendee'}
+                                  </span>
+                                  <span className={`attendee-status status-${attendee?.status || 'pending'}`}>
+                                    {attendee?.status ? attendee.status.charAt(0).toUpperCase() + attendee.status.slice(1) : 'Pending'}
+                                  </span>
+                                </div>
+                                
+                                {isEditingAttendees && (
+                                  <div className="attendee-actions">
+                                    <select
+                                      value={attendee.status || 'pending'}
+                                      onChange={(e) => updateAttendeeStatus(
+                                        attendee.id, 
+                                        e.target.value, 
+                                        attendee.email
+                                      )}
+                                      className="status-select"
+                                      disabled={attendeesLoading}
+                                    >
+                                      <option value="pending">Pending</option>
+                                      <option value="accepted">Accepted</option>
+                                      <option value="declined">Declined</option>
+                                      <option value="tentative">Tentative</option>
+                                    </select>
+                                    <button
+                                      className="btn-icon-small danger"
+                                      onClick={() => removeAttendeeFromEvent(
+                                        attendee.id, 
+                                        attendee.email
+                                      )}
+                                      disabled={attendeesLoading}
+                                      title="Remove attendee"
+                                    >
+                                      <FaTrash />
+                                    </button>
+                                  </div>
+                                )}
                               </div>
                             ));
                           } else if (currentEvent.attendees && currentEvent.attendees.length > 0) {
                             return currentEvent.attendees.map((attendee, index) => (
-                              <span key={index} className="attendee">
-                                {typeof attendee === 'string' 
-                                  ? attendee 
-                                  : (attendee?.email || attendee?.name || 'Unknown')}
-                              </span>
+                              <div key={index} className="attendee-with-status">
+                                <div className="attendee-info">
+                                  <span className="attendee-name">
+                                    {typeof attendee === 'string' 
+                                      ? attendee 
+                                      : (attendee?.email || attendee?.name || 'Unknown')}
+                                  </span>
+                                  <span className="attendee-status status-pending">
+                                    Pending
+                                  </span>
+                                </div>
+                                
+                                {isEditingAttendees && (
+                                  <div className="attendee-actions">
+                                    <button
+                                      className="btn-icon-small danger"
+                                      onClick={() => removeAttendeeFromEvent(
+                                        `basic-${index}`, 
+                                        typeof attendee === 'string' ? attendee : attendee.email
+                                      )}
+                                      disabled={attendeesLoading}
+                                      title="Remove attendee"
+                                    >
+                                      <FaTrash />
+                                    </button>
+                                  </div>
+                                )}
+                              </div>
                             ));
                           }
+                          
+                          if (isEditingAttendees && (!currentEvent.attendeesWithStatus || currentEvent.attendeesWithStatus.length === 0) && 
+                              (!currentEvent.attendees || currentEvent.attendees.length === 0)) {
+                            return <p className="no-attendees">No attendees yet. Add some below!</p>;
+                          }
+                          
                           return null;
                         } catch (error) {
                           console.error('Error rendering attendees:', error);
                           return <span className="attendee">Error loading attendees</span>;
                         }
                       })()}
+                      
+                      {/* Add New Attendee Form */}
+                      {isEditingAttendees && (
+                        <div className="add-attendee-form">
+                          <div className="form-row">
+                            <input
+                              type="text"
+                              placeholder="Attendee Name (optional)"
+                              value={newAttendeeName}
+                              onChange={(e) => setNewAttendeeName(e.target.value)}
+                              className="attendee-input"
+                              disabled={attendeesLoading}
+                            />
+                            <input
+                              type="email"
+                              placeholder="Email Address"
+                              value={newAttendeeEmail}
+                              onChange={(e) => setNewAttendeeEmail(e.target.value)}
+                              className="attendee-input"
+                              disabled={attendeesLoading}
+                              required
+                            />                            <button
+                              className="btn-primary-small"
+                              onClick={addAttendeeToEvent}
+                              disabled={!newAttendeeEmail.trim() || 
+                                       attendeesLoading || 
+                                       !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(newAttendeeEmail.trim())}
+                              title="Add attendee"
+                            >
+                              <FaPlus />
+                            </button>
+                          </div>
+                        </div>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -1553,8 +2511,12 @@ const Calendar = () => {
             <div className="event-modal-actions">
               <button className="btn-outline danger" onClick={deleteEvent}>
                 <FaTrash /> Delete
-              </button>
-              <button className="btn-outline" onClick={() => setShowEventModal(false)}>
+              </button>              <button className="btn-outline" onClick={() => {
+                setShowEventModal(false);
+                setIsEditingAttendees(false);
+                setNewAttendeeEmail('');
+                setNewAttendeeName('');
+              }}>
                 <FaTimes /> Close
               </button>
               <button className="btn-primary" onClick={toggleEventCompletion}>
@@ -3058,10 +4020,141 @@ const Calendar = () => {
           background-color: rgba(245, 158, 11, 0.1);
           color: var(--warning-color);
         }
-        
-        .attendee-status.status-pending {
+          .attendee-status.status-pending {
           background-color: rgba(156, 163, 175, 0.1);
           color: var(--gray-600);
+        }
+        
+        /* Attendee Management Styles */
+        .detail-header {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          margin-bottom: var(--spacing-sm);
+        }
+        
+        .attendee-info {
+          display: flex;
+          flex-direction: column;
+          gap: var(--spacing-xs);
+          flex: 1;
+        }
+        
+        .attendee-actions {
+          display: flex;
+          align-items: center;
+          gap: var(--spacing-xs);
+          margin-left: var(--spacing-sm);
+        }
+        
+        .status-select {
+          font-size: var(--text-xs);
+          padding: 2px var(--spacing-xs);
+          border: 1px solid var(--gray-300);
+          border-radius: var(--border-radius-sm);
+          background-color: var(--white);
+          min-width: 80px;
+        }
+        
+        .add-attendee-form {
+          margin-top: var(--spacing-md);
+          padding-top: var(--spacing-md);
+          border-top: 1px solid var(--gray-200);
+        }
+        
+        .attendee-input {
+          flex: 1;
+          padding: var(--spacing-xs) var(--spacing-sm);
+          border: 1px solid var(--gray-300);
+          border-radius: var(--border-radius);
+          font-size: var(--text-sm);
+        }
+        
+        .attendee-input:focus {
+          outline: none;
+          border-color: var(--primary-color);
+          box-shadow: 0 0 0 2px rgba(79, 70, 229, 0.1);
+        }
+        
+        .btn-primary-small {
+          padding: var(--spacing-xs) var(--spacing-sm);
+          background-color: var(--primary-color);
+          color: var(--white);
+          border: none;
+          border-radius: var(--border-radius);
+          font-size: var(--text-sm);
+          cursor: pointer;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          min-width: 36px;
+          height: 36px;
+          transition: var(--transition);
+        }
+        
+        .btn-primary-small:hover:not(:disabled) {
+          background-color: var(--primary-dark);
+          transform: translateY(-1px);
+        }
+        
+        .btn-primary-small:disabled {
+          opacity: 0.5;
+          cursor: not-allowed;
+          transform: none;
+        }
+        
+        .btn-icon-small {
+          padding: var(--spacing-xs);
+          background: none;
+          border: 1px solid var(--gray-300);
+          border-radius: var(--border-radius);
+          cursor: pointer;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          width: 28px;
+          height: 28px;
+          transition: var(--transition);
+          color: var(--gray-600);
+        }
+        
+        .btn-icon-small:hover:not(:disabled) {
+          background-color: var(--gray-100);
+          border-color: var(--gray-400);
+          transform: translateY(-1px);
+        }
+        
+        .btn-icon-small.danger {
+          color: var(--danger-color);
+          border-color: var(--danger-color);
+        }
+        
+        .btn-icon-small.danger:hover:not(:disabled) {
+          background-color: rgba(239, 68, 68, 0.1);
+          border-color: var(--danger-color);
+        }
+        
+        .btn-icon-small:disabled {
+          opacity: 0.5;
+          cursor: not-allowed;
+          transform: none;
+        }
+        
+        .no-attendees {
+          color: var(--gray-500);
+          font-style: italic;
+          font-size: var(--text-sm);
+          margin: 0;
+        }
+        
+        .loading-spinner-small {
+          width: 16px;
+          height: 16px;
+          border: 2px solid var(--gray-200);
+          border-top: 2px solid var(--primary-color);
+          border-radius: 50%;
+          animation: spin 1s linear infinite;
+          margin: var(--spacing-xs) 0;
         }
         
         .reminders-list {

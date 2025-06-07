@@ -243,7 +243,6 @@ const Calendar = () => {
     
     setFilteredEvents(filtered);
   }, [events, searchQuery, selectedCategories]);
-
   // Monitor currentEvent attendee state changes for debugging
   useEffect(() => {
     if (currentEvent) {
@@ -255,7 +254,8 @@ const Calendar = () => {
         attendees: currentEvent.attendees?.length || 0,
         attendeesData: currentEvent.attendees,
         lastAttendeesUpdate: currentEvent.lastAttendeesUpdate,
-        timestamp: new Date().toISOString()
+        timestamp: new Date().toISOString(),
+        stackTrace: new Error().stack // Add stack trace to see what caused this update
       });
       
       // Update the ref for immediate access
@@ -298,16 +298,24 @@ const Calendar = () => {
     setSelectedDate(today);
   };  // Handle event click - fetch detailed event information
   const handleEventClick = async (event) => {
-    try {
-      console.log('📅 Event clicked:', { 
+    try {      console.log('📅 Event clicked:', { 
         id: event.id, 
         title: event.title, 
         originalBackendId: event.originalBackendId,
         isBackendEvent: event.isBackendEvent,
         fullEvent: event 
       });
-      
-      setCurrentEvent(event); // Set the basic event data first
+        // Set the basic event data first, but preserve any existing attendee data if available
+      setCurrentEvent(prev => ({
+        ...event,
+        // Preserve attendee data if it exists from previous state AND if attendees were already fetched
+        attendeesWithStatus: event.attendeesWithStatus || 
+                            (prev?._attendeesFetched ? prev.attendeesWithStatus : []),
+        attendees: event.attendees || 
+                  (prev?._attendeesFetched ? prev.attendees : []),
+        // Preserve the fetched flag
+        _attendeesFetched: prev?._attendeesFetched || false
+      }));
       setShowEventModal(true);
       
       // Only fetch detailed info if we have a valid backend event
@@ -374,9 +382,17 @@ const Calendar = () => {
             createdAt: detailedEvent.created_at ? new Date(detailedEvent.created_at) : null,
             updatedAt: detailedEvent.updated_at ? new Date(detailedEvent.updated_at) : null,
             createdBy: detailedEvent.created_by || null
-          };
-            // Update the current event with detailed information
-          setCurrentEvent(enrichedEvent);
+          };          // Update the current event with detailed information, preserving existing attendee data
+          setCurrentEvent(prev => ({
+            ...enrichedEvent,
+            // Preserve any attendee data that might have been fetched already if _attendeesFetched is true
+            attendeesWithStatus: enrichedEvent.attendeesWithStatus || 
+                               (prev?._attendeesFetched ? prev.attendeesWithStatus : []),
+            attendees: enrichedEvent.attendees || 
+                      (prev?._attendeesFetched ? prev.attendees : []),
+            // Preserve the fetched flag
+            _attendeesFetched: prev?._attendeesFetched || false
+          }));
             console.log('✅ Event details fetched successfully:', enrichedEvent);
             // Fetch attendees for the event if it's a backend event
           if (enrichedEvent.isBackendEvent && enrichedEvent.originalBackendId) {
@@ -683,9 +699,15 @@ const Calendar = () => {
           event.id === currentEvent.id 
             ? { ...event, completed: !event.completed } 
             : event
-        );
-        setEvents(updatedEvents);
-        setCurrentEvent({ ...currentEvent, completed: !currentEvent.completed });
+        );        setEvents(updatedEvents);
+        setCurrentEvent(prev => ({ 
+          ...prev, 
+          completed: !prev.completed,
+          // Preserve attendee data 
+          attendeesWithStatus: prev.attendeesWithStatus || currentEvent.attendeesWithStatus,
+          attendees: prev.attendees || currentEvent.attendees,
+          _attendeesFetched: prev._attendeesFetched || currentEvent._attendeesFetched
+        }));
         
         // Show success notification
         const statusText = !currentEvent.completed ? 'completed' : 'pending';
@@ -700,17 +722,49 @@ const Calendar = () => {
           try {
           // Use the original backend ID for update, even if it's undefined
           const updateId = currentEvent.originalBackendId || currentEvent.id;
-          
-          // Use the correct PUT endpoint to update the event with new completion status
+            // Use the correct PUT endpoint to update the event with new completion status
           await apiService.calendar.update(updateId, { 
             completed: !currentEvent.completed 
           });
+            // Store attendee data before refreshing events
+          const attendeeDataToPreserve = {
+            attendeesWithStatus: currentEvent.attendeesWithStatus,
+            attendees: currentEvent.attendees,
+            _attendeesFetched: currentEvent._attendeesFetched
+          };
+          
+          console.log('🔄 Preserving attendee data before fetchEvents():', attendeeDataToPreserve);
           
           // Refresh events from server to get the latest data
           await fetchEvents();
           
+          // Find the updated event and restore attendee data
+          setEvents(prevEvents => 
+            prevEvents.map(event => 
+              event.id === currentEvent.id || event.originalBackendId === currentEvent.originalBackendId
+                ? {
+                    ...event,
+                    completed: !currentEvent.completed,
+                    // Restore preserved attendee data
+                    attendeesWithStatus: attendeeDataToPreserve.attendeesWithStatus,
+                    attendees: attendeeDataToPreserve.attendees,
+                    _attendeesFetched: attendeeDataToPreserve._attendeesFetched
+                  }
+                : event
+            )
+          );
+          
+          console.log('✅ Restored attendee data after fetchEvents()');
+          
           // Update current event state
-          setCurrentEvent({ ...currentEvent, completed: !currentEvent.completed });
+          setCurrentEvent(prev => ({ 
+            ...prev, 
+            completed: !prev.completed,
+            // Preserve attendee data 
+            attendeesWithStatus: attendeeDataToPreserve.attendeesWithStatus || prev.attendeesWithStatus,
+            attendees: attendeeDataToPreserve.attendees || prev.attendees,
+            _attendeesFetched: attendeeDataToPreserve._attendeesFetched || prev._attendeesFetched
+          }));
           
           // Show success notification
           const statusText = !currentEvent.completed ? 'completed' : 'pending';
@@ -721,8 +775,7 @@ const Calendar = () => {
           
         } catch (backendError) {
           console.error('❌ Backend completion toggle failed:', backendError);
-          
-          // If backend update fails, fall back to local update
+            // If backend update fails, fall back to local update
           console.log('🔄 Backend update failed, falling back to local update...');
           
           const updatedEvents = events.map(event => 
@@ -731,7 +784,14 @@ const Calendar = () => {
               : event
           );
           setEvents(updatedEvents);
-          setCurrentEvent({ ...currentEvent, completed: !currentEvent.completed });
+          setCurrentEvent(prev => ({ 
+            ...prev, 
+            completed: !prev.completed,
+            // Preserve attendee data 
+            attendeesWithStatus: prev.attendeesWithStatus || currentEvent.attendeesWithStatus,
+            attendees: prev.attendees || currentEvent.attendees,
+            _attendeesFetched: prev._attendeesFetched || currentEvent._attendeesFetched
+          }));
           
           const statusText = !currentEvent.completed ? 'completed' : 'pending';
           success(`Event "${currentEvent.title}" marked as ${statusText} locally (Backend update failed)`);
@@ -750,16 +810,47 @@ const Calendar = () => {
           !currentEvent.id.startsWith('backend-undefined-')) {
         
         console.log('🌐 Attempting backend completion toggle for legacy event ID:', currentEvent.id);
-          try {
-          // Use PUT endpoint to update event completion status
+          try {          // Use PUT endpoint to update event completion status
           await apiService.calendar.update(currentEvent.id, { 
             completed: !currentEvent.completed 
           });
+            // Store attendee data before refreshing events
+          const attendeeDataToPreserve = {
+            attendeesWithStatus: currentEvent.attendeesWithStatus,
+            attendees: currentEvent.attendees,
+            _attendeesFetched: currentEvent._attendeesFetched
+          };
           
-          // Refresh events from server to get the latest data
-          await fetchEvents();
+          console.log('🔄 Preserving attendee data before fetchEvents():', attendeeDataToPreserve);
           
-          setCurrentEvent({ ...currentEvent, completed: !currentEvent.completed });
+          // Refresh events from server to get the latest data          await fetchEvents();
+          
+          // Find the updated event and restore attendee data
+          setEvents(prevEvents => 
+            prevEvents.map(event => 
+              event.id === currentEvent.id || event.originalBackendId === currentEvent.originalBackendId
+                ? {
+                    ...event,
+                    completed: !currentEvent.completed,
+                    // Restore preserved attendee data
+                    attendeesWithStatus: attendeeDataToPreserve.attendeesWithStatus,
+                    attendees: attendeeDataToPreserve.attendees,
+                    _attendeesFetched: attendeeDataToPreserve._attendeesFetched
+                  }
+                : event
+            )
+          );
+          
+          console.log('✅ Restored attendee data after fetchEvents()');
+          
+          setCurrentEvent(prev => ({ 
+            ...prev, 
+            completed: !prev.completed,
+            // Preserve attendee data 
+            attendeesWithStatus: attendeeDataToPreserve.attendeesWithStatus || prev.attendeesWithStatus,
+            attendees: attendeeDataToPreserve.attendees || prev.attendees,
+            _attendeesFetched: attendeeDataToPreserve._attendeesFetched || prev._attendeesFetched
+          }));
           
           const statusText = !currentEvent.completed ? 'completed' : 'pending';
           success(`Event "${currentEvent.title}" marked as ${statusText}!`);
@@ -772,10 +863,16 @@ const Calendar = () => {
           const updatedEvents = events.map(event => 
             event.id === currentEvent.id 
               ? { ...event, completed: !event.completed } 
-              : event
-          );
+              : event          );
           setEvents(updatedEvents);
-          setCurrentEvent({ ...currentEvent, completed: !currentEvent.completed });
+          setCurrentEvent(prev => ({ 
+            ...prev, 
+            completed: !prev.completed,
+            // Preserve attendee data 
+            attendeesWithStatus: prev.attendeesWithStatus || currentEvent.attendeesWithStatus,
+            attendees: prev.attendees || currentEvent.attendees,
+            _attendeesFetched: prev._attendeesFetched || currentEvent._attendeesFetched
+          }));
           
           const statusText = !currentEvent.completed ? 'completed' : 'pending';
           success(`Event "${currentEvent.title}" marked as ${statusText} locally (Backend update failed)`);
@@ -791,9 +888,15 @@ const Calendar = () => {
         event.id === currentEvent.id 
           ? { ...event, completed: !event.completed } 
           : event
-      );
-      setEvents(updatedEvents);
-      setCurrentEvent({ ...currentEvent, completed: !currentEvent.completed });
+      );      setEvents(updatedEvents);
+      setCurrentEvent(prev => ({ 
+        ...prev, 
+        completed: !prev.completed,
+        // Preserve attendee data 
+        attendeesWithStatus: prev.attendeesWithStatus || currentEvent.attendeesWithStatus,
+        attendees: prev.attendees || currentEvent.attendees,
+        _attendeesFetched: prev._attendeesFetched || currentEvent._attendeesFetched
+      }));
       
       const statusText = !currentEvent.completed ? 'completed' : 'pending';
       success(`Event "${currentEvent.title}" marked as ${statusText} locally (Invalid event ID)`);
@@ -808,9 +911,15 @@ const Calendar = () => {
           event.id === currentEvent.id 
             ? { ...event, completed: !event.completed } 
             : event
-        );
-        setEvents(updatedEvents);
-        setCurrentEvent({ ...currentEvent, completed: !currentEvent.completed });
+        );        setEvents(updatedEvents);
+        setCurrentEvent(prev => ({ 
+          ...prev, 
+          completed: !prev.completed,
+          // Preserve attendee data 
+          attendeesWithStatus: prev.attendeesWithStatus || currentEvent.attendeesWithStatus,
+          attendees: prev.attendees || currentEvent.attendees,
+          _attendeesFetched: prev._attendeesFetched || currentEvent._attendeesFetched
+        }));
         
         const statusText = !currentEvent.completed ? 'completed' : 'pending';
         success(`Event "${currentEvent.title}" marked as ${statusText} locally (Error occurred)`);
@@ -976,10 +1085,21 @@ const Calendar = () => {
     const apiEventId = String(eventId);
 
     try {
-      setAttendeesLoading(true);
-      console.log('📅 Fetching attendees for event:', eventId);
-        // Use original backend ID if available, otherwise use the provided eventId
-      const fetchId = currentEvent?.originalBackendId || apiEventId;
+      setAttendeesLoading(true);      console.log('📅 Fetching attendees for event:', eventId);
+      
+      // Prioritize the explicitly passed eventId, only fall back to targetEvent's backend ID if eventId is falsy
+      const fetchId = apiEventId || targetEvent?.originalBackendId;
+      
+      console.log('📅 Attendee fetch decision logic:', {
+        passedEventId: eventId,
+        apiEventId: apiEventId,
+        targetEventOriginalBackendId: targetEvent?.originalBackendId,
+        targetEventId: targetEvent?.id,
+        finalFetchId: fetchId,
+        usingPassedId: !!apiEventId,
+        fallbackToBackendId: !apiEventId && !!targetEvent?.originalBackendId
+      });
+      
       const response = await apiService.calendar.attendees.get(fetchId);
       
       console.log('📅 Attendees API response:', {
@@ -1034,39 +1154,148 @@ const Calendar = () => {
         ...attendee
       }));
         console.log('📅 Raw attendees from backend:', attendeesData);
-      console.log('📅 Normalized attendees for frontend:', normalizedAttendees);
-        // Update current event with fetched attendees
+      console.log('📅 Normalized attendees for frontend:', normalizedAttendees);      // Update current event with fetched attendees
+      console.log('📅 CRITICAL DEBUG - currentEvent check:', {
+        currentEventExists: !!currentEvent,
+        currentEventValue: currentEvent,
+        currentEventId: currentEvent?.id,
+        targetEventExists: !!targetEvent,
+        targetEventValue: targetEvent,
+        targetEventId: targetEvent?.id
+      });
+      
       if (currentEvent) {
         console.log('📅 Before state update - currentEvent.attendeesWithStatus:', currentEvent.attendeesWithStatus);
         console.log('📅 About to set normalizedAttendees:', normalizedAttendees);
-        
-        setCurrentEvent(prev => {
-          const updatedEvent = {
-            ...prev,
-            attendeesWithStatus: normalizedAttendees,
-            attendees: normalizedAttendees.map(att => att.email || att.name),
-            // Add a timestamp to force React to recognize this as a new state
-            lastAttendeesUpdate: Date.now()
-          };
-          console.log('📅 State update - prev event:', prev);
-          console.log('📅 State update - new event:', updatedEvent);
-          return updatedEvent;
+        console.log('📅 Target event for attendees:', targetEvent?.id, 'Current event:', currentEvent?.id);// Always update currentEvent if we're fetching for the currently displayed event
+        console.log('📅 Pre-condition check values:', {
+          targetEvent: !!targetEvent,
+          currentEvent: !!currentEvent,
+          targetEventId: targetEvent?.id,
+          targetEventIdType: typeof targetEvent?.id,
+          currentEventId: currentEvent?.id,
+          currentEventIdType: typeof currentEvent?.id,
+          targetBackendId: targetEvent?.originalBackendId,
+          currentBackendId: currentEvent?.originalBackendId,
+          fetchId: fetchId,
+          fetchIdType: typeof fetchId
         });
         
-        // Also store in a ref for immediate access without waiting for state update
-        currentEventRef.current = {
-          ...currentEvent,
-          attendeesWithStatus: normalizedAttendees,
-          attendees: normalizedAttendees.map(att => att.email || att.name),
-          lastAttendeesUpdate: Date.now()
-        };
+        const condition1 = String(targetEvent?.id) === String(currentEvent?.id);
+        const condition2 = String(targetEvent?.originalBackendId) === String(currentEvent?.originalBackendId);
+        const condition3 = String(fetchId) === String(currentEvent?.id);
+        const condition4 = String(fetchId) === String(currentEvent?.originalBackendId);
+        
+        const shouldUpdateCurrentEvent = targetEvent && currentEvent && (condition1 || condition2 || condition3 || condition4);
+        
+        console.log('📅 Detailed condition evaluation:', {
+          hasTargetEvent: !!targetEvent,
+          hasCurrentEvent: !!currentEvent,
+          condition1_targetId_eq_currentId: condition1,
+          condition2_targetBackendId_eq_currentBackendId: condition2,
+          condition3_fetchId_eq_currentId: condition3,
+          condition4_fetchId_eq_currentBackendId: condition4,
+          anyConditionTrue: condition1 || condition2 || condition3 || condition4,
+          finalShouldUpdate: shouldUpdateCurrentEvent
+        });
+        
+        console.log('📅 Should update current event:', shouldUpdateCurrentEvent);        if (shouldUpdateCurrentEvent) {
+          console.log('📅 Updating currentEvent state with attendees:', normalizedAttendees);
+          setCurrentEvent(prev => {
+            const updatedEvent = {
+              ...prev,
+              attendeesWithStatus: normalizedAttendees,
+              attendees: normalizedAttendees.map(att => att.email || att.name),
+              // Add a timestamp to force React to recognize this as a new state
+              lastAttendeesUpdate: Date.now(),
+              // Mark that attendees have been successfully fetched
+              _attendeesFetched: true
+            };
+            console.log('📅 State update - prev event:', prev);
+            console.log('📅 State update - new event:', updatedEvent);
+            console.log('📅 State update - attendeesWithStatus length:', updatedEvent.attendeesWithStatus?.length);
+            return updatedEvent;
+          });
+          
+          // Also store in a ref for immediate access without waiting for state update
+          const refUpdate = {
+            ...currentEvent,
+            attendeesWithStatus: normalizedAttendees,
+            attendees: normalizedAttendees.map(att => att.email || att.name),
+            lastAttendeesUpdate: Date.now(),
+            _attendeesFetched: true
+          };
+          currentEventRef.current = refUpdate;
+          
+          console.log('📅 Updated currentEventRef:', currentEventRef.current);
+          console.log('📅 Updated currentEventRef attendeesWithStatus length:', currentEventRef.current?.attendeesWithStatus?.length);
+        } else {
+          console.log('📅 Skipping currentEvent update - event ID mismatch');
+          console.log('📅 FORCING currentEventRef update as fallback...');
+          
+          // FORCE update the ref regardless of condition mismatch
+          const refUpdate = {
+            ...currentEvent,
+            attendeesWithStatus: normalizedAttendees,
+            attendees: normalizedAttendees.map(att => att.email || att.name),
+            lastAttendeesUpdate: Date.now(),
+            _attendeesFetched: true
+          };
+          currentEventRef.current = refUpdate;
+          
+          console.log('📅 FORCED currentEventRef update:', currentEventRef.current);
+          console.log('📅 FORCED currentEventRef attendeesWithStatus length:', currentEventRef.current?.attendeesWithStatus?.length);
+          
+          // Also force state update since the condition logic might be wrong
+          console.log('📅 FORCING currentEvent state update as well...');          setCurrentEvent(prev => {
+            const updatedEvent = {
+              ...prev,
+              attendeesWithStatus: normalizedAttendees,
+              attendees: normalizedAttendees.map(att => att.email || att.name),
+              lastAttendeesUpdate: Date.now(),
+              _attendeesFetched: true
+            };
+            console.log('📅 FORCED State update - prev event:', prev);
+            console.log('📅 FORCED State update - new event:', updatedEvent);
+            return updatedEvent;
+          });
+        }
+      } else {
+        console.log('🚨 CRITICAL: currentEvent is null/undefined during attendee fetch!');
+        console.log('🚨 This is why attendees are not being stored in state/ref');
+        console.log('🚨 Attempting to force update with targetEvent...');
+        
+        if (targetEvent) {
+          console.log('📅 Using targetEvent as fallback for state update');
+          
+          // Force update currentEvent with the targetEvent and attendees
+          setCurrentEvent({
+            ...targetEvent,
+            attendeesWithStatus: normalizedAttendees,
+            attendees: normalizedAttendees.map(att => att.email || att.name),
+            lastAttendeesUpdate: Date.now(),
+            _attendeesFetched: true
+          });
+          
+          // Also update the ref
+          currentEventRef.current = {
+            ...targetEvent,
+            attendeesWithStatus: normalizedAttendees,
+            attendees: normalizedAttendees.map(att => att.email || att.name),
+            lastAttendeesUpdate: Date.now(),
+            _attendeesFetched: true
+          };
+          
+          console.log('✅ FORCED currentEvent update using targetEvent');
+        } else {
+          console.log('🚨 Both currentEvent and targetEvent are null - cannot update state');
+        }
       }
-      
-      // Also update the events list to keep it in sync
-      if (currentEvent && currentEvent.id) {
+        // Also update the events list to keep it in sync
+      if (targetEvent && targetEvent.id) {
         setEvents(prevEvents => 
           prevEvents.map(event => 
-            event.id === currentEvent.id 
+            event.id === targetEvent.id || event.originalBackendId === targetEvent.originalBackendId
               ? { 
                   ...event, 
                   attendeesWithStatus: normalizedAttendees,
@@ -1075,6 +1304,7 @@ const Calendar = () => {
               : event
           )
         );
+        console.log('📅 Updated events list with attendees for event:', targetEvent.id);
       }
       
       console.log('✅ Attendees fetched and synchronized successfully:', attendeesData);
@@ -1107,18 +1337,43 @@ const Calendar = () => {
   // Add new attendee to event
   const addAttendeeToEvent = async () => {
     if (!currentEvent || !newAttendeeEmail.trim()) return;
+      // Use originalBackendId only if it exists and is valid, otherwise check if the main id is a real backend ID
+    let eventId = currentEvent.originalBackendId;
     
-    const eventId = currentEvent.originalBackendId || currentEvent.id;
+    // If no originalBackendId, check if the main ID is a valid backend ID (not a generated frontend ID)
+    if (!eventId || eventId === 'undefined' || eventId === null) {
+      if (currentEvent.id && 
+          typeof currentEvent.id !== 'string' || 
+          (typeof currentEvent.id === 'string' && 
+           !currentEvent.id.startsWith('backend-undefined-') &&
+           !currentEvent.id.startsWith('fallback-') &&
+           !currentEvent.id.startsWith('local-') &&
+           !currentEvent.id.startsWith('sample-'))) {
+        eventId = currentEvent.id;
+      }
+    }
     
     console.log('📅 Adding attendee - Event details:', {
       currentEventId: currentEvent.id,
       originalBackendId: currentEvent.originalBackendId,
       isBackendEvent: currentEvent.isBackendEvent,
-      finalEventId: eventId
+      finalEventId: eventId,
+      eventIdValidation: {
+        hasOriginalBackendId: !!currentEvent.originalBackendId,
+        mainIdType: typeof currentEvent.id,
+        mainIdValue: currentEvent.id
+      }
     });
     
-    // Validate eventId
-    if (!eventId || eventId === 'undefined' || eventId === null) {
+    // Validate eventId - more comprehensive check
+    if (!eventId || 
+        eventId === 'undefined' || 
+        eventId === null ||
+        (typeof eventId === 'string' && 
+         (eventId.startsWith('backend-undefined-') ||
+          eventId.startsWith('fallback-') ||
+          eventId.startsWith('local-') ||
+          eventId.startsWith('sample-')))) {
       console.error('📅 Invalid event ID for attendee addition:', eventId);
       success(`Attendee added locally (invalid event ID)`);
       
@@ -1349,7 +1604,21 @@ const Calendar = () => {
   const removeAttendeeFromEvent = async (attendeeId, attendeeIdentifier) => {
     if (!currentEvent) return;
     
-    const eventId = currentEvent.originalBackendId || currentEvent.id;
+    // Use originalBackendId only if it exists and is valid, otherwise check if the main id is a real backend ID
+    let eventId = currentEvent.originalBackendId;
+    
+    // If no originalBackendId, check if the main ID is a valid backend ID (not a generated frontend ID)
+    if (!eventId || eventId === 'undefined' || eventId === null) {
+      if (currentEvent.id && 
+          typeof currentEvent.id !== 'string' || 
+          (typeof currentEvent.id === 'string' && 
+           !currentEvent.id.startsWith('backend-undefined-') &&
+           !currentEvent.id.startsWith('fallback-') &&
+           !currentEvent.id.startsWith('local-') &&
+           !currentEvent.id.startsWith('sample-'))) {
+        eventId = currentEvent.id;
+      }
+    }
     
     console.log('📅 Removing attendee - Event details:', {
       currentEventId: currentEvent.id,
@@ -1357,15 +1626,19 @@ const Calendar = () => {
       isBackendEvent: currentEvent.isBackendEvent,
       finalEventId: eventId,
       attendeeId,
-      attendeeIdentifier
-    });
-      // Check if attendee exists in current event data
-    const attendeeExistsInStatus = currentEvent.attendeesWithStatus?.some(att => 
+      attendeeIdentifier,
+      eventIdValidation: {
+        hasOriginalBackendId: !!currentEvent.originalBackendId,
+        mainIdType: typeof currentEvent.id,
+        mainIdValue: currentEvent.id
+      }
+    });    // Check if attendee exists in current event data (use ref for immediate access)
+    const eventToCheck = currentEventRef.current || currentEvent;
+    const attendeeExistsInStatus = eventToCheck.attendeesWithStatus?.some(att => 
       att.id === attendeeId || att.email === attendeeIdentifier
     );
-    const attendeeExistsInBasic = currentEvent.attendees?.includes(attendeeIdentifier);
-    
-    // Force refresh if attendeesWithStatus is empty but attendees exist (state sync issue)
+    const attendeeExistsInBasic = eventToCheck.attendees?.includes(attendeeIdentifier);
+      // Force refresh if attendeesWithStatus is empty but attendees exist (state sync issue)
     if (!attendeeExistsInStatus && attendeeExistsInBasic && 
         (!currentEvent.attendeesWithStatus || currentEvent.attendeesWithStatus.length === 0) &&
         currentEvent.attendees && currentEvent.attendees.length > 0) {
@@ -1373,15 +1646,21 @@ const Calendar = () => {
       
       try {
         await fetchEventAttendees(eventId, currentEvent);
-        // After refresh, check again
+        // After refresh, check again and update attendeeId if we found the attendee
         const refreshedEvent = currentEventRef.current || currentEvent;
-        const attendeeExistsAfterRefresh = refreshedEvent.attendeesWithStatus?.some(att => 
-          att.id === attendeeId || att.email === attendeeIdentifier
+        const foundAttendee = refreshedEvent.attendeesWithStatus?.find(att => 
+          att.email === attendeeIdentifier
         );
         
-        if (attendeeExistsAfterRefresh) {
-          console.log('📅 Attendee found after refresh, continuing with removal...');
-          // Continue with the removal process after refresh
+        if (foundAttendee) {
+          console.log('📅 Attendee found after refresh, updating attendeeId and continuing with removal...');
+          console.log('📅 Found attendee details:', foundAttendee);
+          
+          // Update the attendeeId to use the real backend ID
+          attendeeId = foundAttendee.id;
+          
+          console.log('📅 Updated attendeeId for removal:', attendeeId);
+          // Continue with the removal process after refresh with proper ID
         } else {
           console.warn('📅 Attendee still not found after refresh');
           showErrorNotification('Attendee not found in current event');
@@ -1390,8 +1669,7 @@ const Calendar = () => {
       } catch (refreshError) {
         console.error('📅 Failed to refresh attendees:', refreshError);
         showErrorNotification('Failed to refresh attendee data');
-        return;
-      }
+        return;      }
     } else if (!attendeeExistsInStatus && !attendeeExistsInBasic) {
       // Both arrays checked and attendee not found
       console.warn('📅 Attendee not found in current event data:', {
@@ -1404,14 +1682,33 @@ const Calendar = () => {
       return;
     }
     
-    // Check if this is explicitly a local/sample event
-    const isExplicitlyLocalEvent = eventId && 
-                                   typeof eventId === 'string' && 
-                                   (eventId.startsWith('sample-') || 
-                                    eventId.startsWith('local-'));
+    // Final check: if attendeeId is still null, try to find it one more time
+    if (!attendeeId) {
+      console.log('📅 AttendeeId is null, attempting final lookup...');
+      const eventData = currentEventRef.current || currentEvent;
+      const foundAttendee = eventData.attendeesWithStatus?.find(att => 
+        att.email === attendeeIdentifier
+      );
+      
+      if (foundAttendee && foundAttendee.id) {
+        attendeeId = foundAttendee.id;
+        console.log('📅 Found attendeeId in final lookup:', attendeeId);
+      } else {
+        console.log('📅 Could not find valid attendeeId, will handle as email-based removal');
+      }
+    }
+      // Check if this is explicitly a local/sample event OR if we don't have a valid backend event ID
+    const isExplicitlyLocalEvent = !eventId || 
+                                   eventId === 'undefined' || 
+                                   eventId === null ||
+                                   (typeof eventId === 'string' && 
+                                    (eventId.startsWith('sample-') || 
+                                     eventId.startsWith('local-') ||
+                                     eventId.startsWith('backend-undefined-') ||
+                                     eventId.startsWith('fallback-')));
     
     if (isExplicitlyLocalEvent) {
-      console.log('📅 Handling explicitly local/sample event for attendee removal');
+      console.log('📅 Handling local/sample event or invalid backend ID for attendee removal:', eventId);
       
       // Handle local event - update only in local state
       setCurrentEvent(prev => ({
@@ -1436,166 +1733,92 @@ const Calendar = () => {
             : event
         )
       );
-      
-      success(`Attendee removed locally`);
+        success(`Attendee removed locally`);
       return;
-    }    // For all other events, try backend first
-    try {
-      setAttendeesLoading(true);
-      console.log('📅 Attempting backend attendee removal for event:', eventId, attendeeId);
-        // Check if this is a synthetic attendee ID (like "basic-0", "basic-1", etc.)
-      let actualAttendeeId = attendeeId;
-      if (typeof attendeeId === 'string' && attendeeId.startsWith('basic-')) {
-        console.log('📅 Detected synthetic attendee ID, looking up real ID by email:', attendeeIdentifier);
-        console.log('📅 Current event attendeesWithStatus:', currentEvent.attendeesWithStatus);
-        console.log('📅 Current event attendees:', currentEvent.attendees);
-        
-        // Get the most up-to-date event data (state or ref)
-        const currentEventData = currentEventRef.current || currentEvent;
-        console.log('📅 Using event data from:', currentEventRef.current ? 'ref (latest)' : 'state');
-        console.log('📅 Event data attendeesWithStatus:', currentEventData.attendeesWithStatus);
-        
-        // Try to find the real attendee ID from the attendeesWithStatus array
-        const attendeeWithStatus = currentEventData.attendeesWithStatus?.find(att => 
-          att.email === attendeeIdentifier
-        );
-        
-        console.log('📅 Found attendee with status:', attendeeWithStatus);
-        
-        if (attendeeWithStatus && attendeeWithStatus.id) {
-          actualAttendeeId = attendeeWithStatus.id;
-          console.log('📅 Found real attendee ID:', actualAttendeeId);        } else {
-          // If we can't find the real ID, we need to fetch attendees first
-          console.log('📅 Could not find real attendee ID, fetching attendees from backend...');
-          console.log('📅 Available attendeesWithStatus for lookup:', currentEvent.attendeesWithStatus?.map(att => ({
-            id: att.id,
-            email: att.email,
-            name: att.name
-          })));
-          
-          try {
-            const response = await apiService.calendar.attendees.get(eventId);
-            
-            console.log('📅 Attendees API response for ID lookup:', {
-              status: response.status,
-              data: response.data,
-              fullResponse: response
-            });
-            
-            let attendeesData = [];
-            if (response.data && response.data.data) {
-              attendeesData = response.data.data;
-            } else if (response.data) {
-              attendeesData = response.data;
-            }
-            
-            // Ensure attendeesData is an array
-            if (!Array.isArray(attendeesData)) {
-              console.error('📅 Expected array but got:', typeof attendeesData, attendeesData);
-              
-              // Try to extract array from different possible structures
-              if (attendeesData && typeof attendeesData === 'object') {
-                // Check if it's wrapped in another object
-                if (attendeesData.attendees && Array.isArray(attendeesData.attendees)) {
-                  attendeesData = attendeesData.attendees;
-                } else if (attendeesData.data && Array.isArray(attendeesData.data)) {
-                  attendeesData = attendeesData.data;
-                } else {
-                  // Convert object to array if it has numeric keys
-                  const values = Object.values(attendeesData);
-                  if (values.length > 0 && values[0] && typeof values[0] === 'object') {
-                    attendeesData = values;
-                  } else {
-                    throw new Error('Cannot parse attendees data structure');
-                  }
-                }
-              } else {
-                throw new Error('Invalid attendees data format');
-              }
-            }
-            
-            console.log('📅 Processed attendees data:', attendeesData);
-              const matchingAttendee = attendeesData.find(att => att.email === attendeeIdentifier);
-            if (matchingAttendee && matchingAttendee.id) {
-              actualAttendeeId = matchingAttendee.id;
-              console.log('📅 Found real attendee ID from backend:', actualAttendeeId);
-            } else {
-              console.warn('📅 Attendee not found in backend, this appears to be a local-only attendee:', attendeeIdentifier);
-              console.log('📅 Available attendees in backend:', attendeesData.map(att => ({ id: att.id, email: att.email })));
-              
-              // This attendee exists only locally, handle it as a local removal
-              console.log('📅 Treating as local-only attendee removal');
-              
-              // Update current event - remove locally
-              setCurrentEvent(prev => ({
-                ...prev,
-                attendeesWithStatus: (prev.attendeesWithStatus || []).filter(att => 
-                  att.id !== attendeeId && att.email !== attendeeIdentifier
-                ),
-                attendees: (prev.attendees || []).filter(email => email !== attendeeIdentifier)
-              }));
-              
-              // Update events list
-              setEvents(prevEvents => 
-                prevEvents.map(event => 
-                  event.id === currentEvent.id 
-                    ? { 
-                        ...event, 
-                        attendeesWithStatus: (event.attendeesWithStatus || []).filter(att => 
-                          att.id !== attendeeId && att.email !== attendeeIdentifier
-                        ),
-                        attendees: (event.attendees || []).filter(email => email !== attendeeIdentifier)
-                      }
-                    : event
-                )
-              );
-              
-              success(`Attendee removed locally (not found in backend)`);
-              console.log('✅ Local-only attendee removed successfully');
-              return; // Exit the function early
-            }          } catch (fetchError) {
-            console.error('📅 Failed to fetch attendees for ID lookup:', fetchError);
-            
-            // If we can't fetch attendees from backend, treat as local-only removal
-            console.log('📅 Cannot fetch attendees from backend, treating as local-only removal');
-            
-            // Update current event - remove locally
-            setCurrentEvent(prev => ({
-              ...prev,
-              attendeesWithStatus: (prev.attendeesWithStatus || []).filter(att => 
-                att.id !== attendeeId && att.email !== attendeeIdentifier
-              ),
-              attendees: (prev.attendees || []).filter(email => email !== attendeeIdentifier)
-            }));
-            
-            // Update events list
-            setEvents(prevEvents => 
-              prevEvents.map(event => 
-                event.id === currentEvent.id 
-                  ? { 
-                      ...event, 
-                      attendeesWithStatus: (event.attendeesWithStatus || []).filter(att => 
-                        att.id !== attendeeId && att.email !== attendeeIdentifier
-                      ),
-                      attendees: (event.attendees || []).filter(email => email !== attendeeIdentifier)
-                    }
-                  : event
-              )
-            );
-            
-            success(`Attendee removed locally (backend fetch failed)`);
-            console.log('✅ Local removal completed due to backend fetch failure');
-            return; // Exit the function early
-          }
-        }
-      }
-        await apiService.calendar.attendees.remove(eventId, actualAttendeeId);
+    }
+
+    // For all other events, try backend first - but validate the IDs first
+    
+    // Additional validation for backend call
+    if (!eventId || (!Number.isInteger(Number(eventId)) && typeof eventId !== 'string')) {
+      console.error('📅 Invalid event ID for backend call:', eventId, typeof eventId);
+      console.log('📅 Falling back to local removal due to invalid event ID');
       
-      // Update current event - use actualAttendeeId for proper filtering
+      // Handle as local removal
       setCurrentEvent(prev => ({
         ...prev,
         attendeesWithStatus: (prev.attendeesWithStatus || []).filter(att => 
-          att.id !== actualAttendeeId && att.id !== attendeeId
+          att.id !== attendeeId && att.email !== attendeeIdentifier
+        ),
+        attendees: (prev.attendees || []).filter(email => email !== attendeeIdentifier)
+      }));
+      
+      setEvents(prevEvents => 
+        prevEvents.map(event => 
+          event.id === currentEvent.id 
+            ? { 
+                ...event, 
+                attendeesWithStatus: (event.attendeesWithStatus || []).filter(att => 
+                  att.id !== attendeeId && att.email !== attendeeIdentifier
+                ),
+                attendees: (event.attendees || []).filter(email => email !== attendeeIdentifier)
+              }
+            : event
+        )
+      );
+      
+      success(`Attendee removed locally (invalid event ID)`);
+      return;
+    }
+    
+    try {
+      setAttendeesLoading(true);      console.log('📅 Attempting backend attendee removal for event:', eventId, attendeeId);
+        // Validate attendee ID before making backend call
+      if (!attendeeId || 
+          attendeeId === null || 
+          attendeeId === undefined || 
+          (typeof attendeeId === 'string' && attendeeId.startsWith('basic-'))) {
+        console.log('📅 Invalid or missing attendee ID for backend call:', attendeeId);
+        console.log('📅 Falling back to local removal due to invalid/missing attendee ID');
+        
+        // Handle as local removal
+        setCurrentEvent(prev => ({
+          ...prev,
+          attendeesWithStatus: (prev.attendeesWithStatus || []).filter(att => 
+            att.email !== attendeeIdentifier
+          ),
+          attendees: (prev.attendees || []).filter(email => email !== attendeeIdentifier)
+        }));
+        
+        setEvents(prevEvents => 
+          prevEvents.map(event => 
+            event.id === currentEvent.id 
+              ? { 
+                  ...event, 
+                  attendeesWithStatus: (event.attendeesWithStatus || []).filter(att => 
+                    att.email !== attendeeIdentifier
+                  ),
+                  attendees: (event.attendees || []).filter(email => email !== attendeeIdentifier)
+                }
+              : event
+          )
+        );
+        
+        success(`Attendee removed locally (no valid backend ID)`);
+        setAttendeesLoading(false);
+        return;
+      }        // At this point, attendeeId should be a valid backend ID
+      console.log('📅 Using valid attendee ID for backend removal:', attendeeId);
+      
+      // Backend call first - wait for success before updating state
+      await apiService.calendar.attendees.remove(eventId, attendeeId);
+      
+      console.log('✅ Backend attendee removal successful, updating frontend state...');
+        // Only update frontend state after successful backend confirmation
+      setCurrentEvent(prev => ({
+        ...prev,
+        attendeesWithStatus: (prev.attendeesWithStatus || []).filter(att => 
+          att.id !== attendeeId && att.email !== attendeeIdentifier
         ),
         attendees: (prev.attendees || []).filter(email => email !== attendeeIdentifier)
       }));
@@ -1607,7 +1830,7 @@ const Calendar = () => {
             ? { 
                 ...event, 
                 attendeesWithStatus: (event.attendeesWithStatus || []).filter(att => 
-                  att.id !== actualAttendeeId && att.id !== attendeeId
+                  att.id !== attendeeId && att.email !== attendeeIdentifier
                 ),
                 attendees: (event.attendees || []).filter(email => email !== attendeeIdentifier)
               }
@@ -1616,8 +1839,8 @@ const Calendar = () => {
       );
       
       success(`Attendee removed successfully!`);
-      console.log('✅ Attendee removed successfully via backend');
-        } catch (error) {
+      console.log('✅ Attendee removed successfully via backend and frontend state updated');
+    } catch (error) {
       console.error('❌ Backend attendee removal failed:', error);
       
       // Log detailed error information for debugging
@@ -1628,7 +1851,7 @@ const Calendar = () => {
           headers: error.response.headers,
           eventId,
           attendeeId,
-          actualAttendeeId: attendeeId.startsWith('basic-') ? 'looked up from backend' : attendeeId
+          attendeeIdentifier
         });
         
         // Show more specific error message if available
@@ -1637,42 +1860,79 @@ const Calendar = () => {
                             `Backend error: ${error.response.status}`;
         console.error('📅 Specific error:', errorMessage);
         
+        // Handle different error scenarios
         if (error.response.status === 404) {
           console.error('📅 404 Error: Attendee or event not found on backend');
+          // For 404, the attendee might already be deleted, so we can remove from frontend
+          console.log('🔄 Attendee not found on backend (404), removing from frontend state...');
+          
+          setCurrentEvent(prev => ({
+            ...prev,
+            attendeesWithStatus: (prev.attendeesWithStatus || []).filter(att => 
+              att.id !== attendeeId && att.email !== attendeeIdentifier
+            ),
+            attendees: (prev.attendees || []).filter(email => email !== attendeeIdentifier)
+          }));
+          
+          setEvents(prevEvents => 
+            prevEvents.map(event => 
+              event.id === currentEvent.id 
+                ? { 
+                    ...event, 
+                    attendeesWithStatus: (event.attendeesWithStatus || []).filter(att => 
+                      att.id !== attendeeId && att.email !== attendeeIdentifier
+                    ),
+                    attendees: (event.attendees || []).filter(email => email !== attendeeIdentifier)
+                  }
+                : event
+            )
+          );
+          
+          success(`Attendee removed (was already deleted on backend)`);
+        } else if (error.response.status >= 400 && error.response.status < 500) {
+          // Client errors (400-499) - don't fall back to local deletion
+          const clientErrorMessage = error.response.data?.message || `Failed to remove attendee: ${errorMessage}`;
+          showErrorNotification(clientErrorMessage);
+          console.log('🚫 Client error occurred, not falling back to local deletion');
+        } else {
+          // Server errors (500+) - could fall back to local deletion as a last resort
+          console.log('🔄 Server error occurred, falling back to local attendee removal...');
+          
+          setCurrentEvent(prev => ({
+            ...prev,
+            attendeesWithStatus: (prev.attendeesWithStatus || []).filter(att => 
+              att.id !== attendeeId && att.email !== attendeeIdentifier
+            ),
+            attendees: (prev.attendees || []).filter(email => email !== attendeeIdentifier)
+          }));
+          
+          setEvents(prevEvents => 
+            prevEvents.map(event => 
+              event.id === currentEvent.id 
+                ? { 
+                    ...event, 
+                    attendeesWithStatus: (event.attendeesWithStatus || []).filter(att => 
+                      att.id !== attendeeId && att.email !== attendeeIdentifier
+                    ),
+                    attendees: (event.attendees || []).filter(email => email !== attendeeIdentifier)
+                  }
+                : event
+            )
+          );
+          
+          showErrorNotification(`Backend server error occurred. Attendee removed locally as fallback.`);
         }
       } else if (error.request) {
-        console.error('📅 No response received:', error.request);
+        // Network error - no response received
+        console.error('📅 No response received (network error):', error.request);
+        showErrorNotification('Network error: Unable to connect to server. Please check your connection and try again.');
+        console.log('🚫 Network error occurred, not falling back to local deletion');
       } else {
+        // Error setting up request
         console.error('📅 Error setting up request:', error.message);
+        showErrorNotification('Request error: Failed to set up removal request.');
+        console.log('🚫 Request setup error occurred, not falling back to local deletion');
       }
-      
-      // Fall back to local removal if backend fails
-      console.log('🔄 Backend failed, falling back to local attendee removal...');
-      
-      setCurrentEvent(prev => ({
-        ...prev,
-        attendeesWithStatus: (prev.attendeesWithStatus || []).filter(att => 
-          att.id !== attendeeId && att.email !== attendeeIdentifier
-        ),
-        attendees: (prev.attendees || []).filter(email => email !== attendeeIdentifier)
-      }));
-      
-      // Update in events list
-      setEvents(prevEvents => 
-        prevEvents.map(event => 
-          event.id === currentEvent.id 
-            ? { 
-                ...event, 
-                attendeesWithStatus: (event.attendeesWithStatus || []).filter(att => 
-                  att.id !== attendeeId && att.email !== attendeeIdentifier
-                ),
-                attendees: (event.attendees || []).filter(email => email !== attendeeIdentifier)
-              }
-            : event
-        )
-      );
-      
-      success(`Attendee removed locally (backend failed)`);
     } finally {
       setAttendeesLoading(false);
     }
@@ -2372,16 +2632,54 @@ const Calendar = () => {
                                   <span className="attendee-status status-pending">
                                     Pending
                                   </span>
-                                </div>
-                                
-                                {isEditingAttendees && (
+                                </div>                                  {isEditingAttendees && (
                                   <div className="attendee-actions">
                                     <button
-                                      className="btn-icon-small danger"
-                                      onClick={() => removeAttendeeFromEvent(
-                                        `basic-${index}`, 
-                                        typeof attendee === 'string' ? attendee : attendee.email
-                                      )}
+                                      className="btn-icon-small danger"                                      onClick={() => {
+                                        // For basic attendees, we need to use email as identifier and try to find real ID
+                                        const attendeeEmail = typeof attendee === 'string' ? attendee : attendee.email;
+                                        
+                                        console.log('📅 Looking for attendee with email:', attendeeEmail);
+                                        
+                                        // Try multiple data sources to find the real attendee ID
+                                        // 1. First try the ref (most up-to-date)
+                                        let eventData = currentEventRef.current;
+                                        let realAttendee = eventData?.attendeesWithStatus?.find(att => 
+                                          att.email === attendeeEmail
+                                        );
+                                        
+                                        // 2. If not found in ref, try current state
+                                        if (!realAttendee) {
+                                          eventData = currentEvent;
+                                          realAttendee = eventData?.attendeesWithStatus?.find(att => 
+                                            att.email === attendeeEmail
+                                          );
+                                        }
+                                        
+                                        // 3. If still not found, try to trigger a fresh fetch
+                                        if (!realAttendee && (!eventData?.attendeesWithStatus || eventData.attendeesWithStatus.length === 0)) {
+                                          console.log('📅 No attendeesWithStatus found, will trigger fetch in removeAttendeeFromEvent');
+                                        }
+                                        
+                                        // Only use real ID if found, otherwise pass null to trigger fetch/lookup in removeAttendeeFromEvent
+                                        const realAttendeeId = realAttendee?.id || null;
+                                        
+                                        console.log('📅 Removing basic attendee:', {
+                                          index,
+                                          attendeeEmail,
+                                          realAttendee,
+                                          realAttendeeId,
+                                          hasRealId: !!realAttendee?.id,
+                                          willFallbackToLocal: !realAttendee?.id,
+                                          usingRefData: !!currentEventRef.current,
+                                          eventDataSource: currentEventRef.current ? 'ref' : 'state',
+                                          refAttendeesLength: currentEventRef.current?.attendeesWithStatus?.length || 0,
+                                          stateAttendeesLength: currentEvent?.attendeesWithStatus?.length || 0
+                                        });
+                                        
+                                        // Pass null for ID if no real ID found - this will trigger lookup/fetch in removeAttendeeFromEvent
+                                        removeAttendeeFromEvent(realAttendeeId, attendeeEmail);
+                                      }}
                                       disabled={attendeesLoading}
                                       title="Remove attendee"
                                     >

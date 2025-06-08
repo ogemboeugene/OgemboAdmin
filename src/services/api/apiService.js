@@ -526,7 +526,7 @@ const apiService = {  // Auth services
       // Resume management
     resume: {
       upload: (resumeData) => apiClient.post('/profile/resume', resumeData),
-      delete: (resumeId) => apiClient.delete(`/profile/resume/${resumeId}`),
+      deleteItem: (resumeId) => apiClient.delete(`/profile/resume/${resumeId}`),
       setPrimary: (resumeId) => apiClient.put(`/profile/resume/${resumeId}/primary`),
     },
     
@@ -559,7 +559,7 @@ const apiService = {  // Auth services
     getById: (id) => apiClient.get(`/projects/${id}`),
     create: (data) => apiClient.post('/projects', data),
     update: (id, data) => apiClient.put(`/projects/${id}`, data),
-    delete: (id) => apiClient.delete(`/projects/${id}`),
+    deleteItem: (id) => apiClient.delete(`/projects/${id}`),
     uploadImage: (id, formData) => apiClient.post(`/projects/${id}/image`, formData, {
       headers: {
         'Content-Type': 'multipart/form-data',
@@ -619,7 +619,7 @@ const apiService = {  // Auth services
     update: (id, skillData) => apiClient.put(`/skills/${id}`, skillData),
     
     // Delete a skill
-    delete: (id) => apiClient.delete(`/skills/${id}`),
+    deleteItem: (id) => apiClient.delete(`/skills/${id}`),
     
     // Bulk operations for skills management
     bulkUpdate: (skillsData) => apiClient.put('/skills/bulk', skillsData),
@@ -644,7 +644,7 @@ const apiService = {  // Auth services
     update: (id, data) => apiClient.put(`/education/${id}`, data),
     
     // Delete education record
-    delete: (id) => apiClient.delete(`/education/${id}`),
+    deleteItem: (id) => apiClient.delete(`/education/${id}`),
     
     // Education bulk operations
     bulkUpdate: (educationData) => apiClient.put('/education/bulk', educationData),
@@ -663,7 +663,7 @@ const apiService = {  // Auth services
     update: (id, data) => apiClient.put(`/experience/${id}`, data),
     
     // Delete work experience record
-    delete: (id) => apiClient.delete(`/experience/${id}`),
+    deleteItem: (id) => apiClient.delete(`/experience/${id}`),
     
     // Experience bulk operations
     bulkUpdate: (experienceData) => apiClient.put('/experience/bulk', experienceData),
@@ -698,9 +698,8 @@ const apiService = {  // Auth services
       console.log('🔄 Updating task with normalized data:', { id, data: normalizedData });
       return apiClient.put(`/tasks/${id}`, normalizedData);
     },
-    
-    // Delete task
-    delete: (id) => {
+      // Delete task
+    deleteItem: (id) => {
       console.log('🗑️ Deleting task:', id);
       return apiClient.delete(`/tasks/${id}`);
     },
@@ -767,7 +766,7 @@ const apiService = {  // Auth services
         const normalizedData = normalizeTaskData(subtaskData);
         return apiClient.put(`/tasks/${taskId}/subtasks/${subtaskId}`, normalizedData);
       },
-      delete: (taskId, subtaskId) => apiClient.delete(`/tasks/${taskId}/subtasks/${subtaskId}`),
+      deleteItem: (taskId, subtaskId) => apiClient.delete(`/tasks/${taskId}/subtasks/${subtaskId}`),
     },
     
     // Task time tracking
@@ -802,14 +801,35 @@ const apiService = {  // Auth services
       getOverview: () => apiClient.get('/tasks/stats/overview'),
       getProductivity: (params = {}) => apiClient.get('/tasks/stats/productivity', { params }),
     }  },
-
   // Calendar services
   calendar: {
     // Get all calendar events with optional filtering
     getAll: (params = {}) => apiClient.get('/calendar/events', { params }),
-    
-    // Get specific calendar event by ID
+      // Get specific calendar event by ID
     getById: (id) => apiClient.get(`/calendar/events/${id}`),
+    
+    // Get user availability within a date range
+    getAvailability: (startDate, endDate, userIds = null, timezone = null) => {
+      console.log('📅 Getting user availability:', { startDate, endDate, userIds, timezone });
+      const params = { 
+        start_date: startDate, 
+        end_date: endDate 
+      };
+      
+      // Add user_ids if provided
+      if (userIds && userIds.length > 0) {
+        params.user_ids = userIds;
+        console.log('📅 Adding user_ids to params:', params.user_ids);
+      }
+      
+      // Add timezone if provided
+      if (timezone) {
+        params.timezone = timezone;
+      }
+      
+      console.log('📅 Final API request params:', params);
+      return apiClient.get('/calendar/availability', { params });
+    },
     
     // Create new calendar event
     create: (eventData) => {
@@ -916,7 +936,6 @@ const apiService = {  // Auth services
       getProductivity: (params = {}) => apiClient.get('/calendar/stats/productivity', { params }),
     }
   },
-
   // User settings
   settings: {
     // Get user settings
@@ -942,6 +961,24 @@ const apiService = {  // Auth services
     
     // Update developer preferences
     updateDeveloperPrefs: (devData) => apiClient.put('/settings/developer-preferences', devData),
+  },
+  
+  // Users services
+  users: {
+    // Get all users
+    getAll: (params = {}) => apiClient.get('/users', { params }),
+    
+    // Get specific user by ID
+    getById: (id) => apiClient.get(`/users/${id}`),
+    
+    // Search users
+    search: (query) => apiClient.get(`/users/search`, { params: { query } }),
+    
+    // Get users by department
+    getByDepartment: (department) => apiClient.get(`/users/department/${department}`),
+    
+    // Get users by role
+    getByRole: (role) => apiClient.get(`/users/role/${role}`),
   },
 };
 

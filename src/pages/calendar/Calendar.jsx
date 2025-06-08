@@ -4,6 +4,8 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { useAuth } from '../../context/AuthContext';
 import { useNotification } from '../../context/NotificationContext';
 import apiService from '../../services/api/apiService';
+import useAvailability from '../../hooks/useAvailability';
+import AvailabilityModal from '../../components/calendar/AvailabilityModal';
 import { 
   FaCalendarAlt, 
   FaPlus, 
@@ -29,7 +31,8 @@ import {
   FaUserClock, 
   FaCode, 
   FaLaptopCode, 
-  FaGithub, 
+  FaGithub,
+  FaCalendarCheck, 
   FaExternalLinkAlt, 
   FaInfoCircle,
   FaRegClock,
@@ -49,7 +52,23 @@ import { formatRelativeTime } from '../../utils/formatters';
 
 const Calendar = () => {
   const { user } = useAuth();
-  const { success, error: showErrorNotification } = useNotification();
+  const { success, error: showErrorNotification } = useNotification();  // Initialize the availability hook
+  const {
+    availability,
+    isLoading: availabilityLoading,
+    error: availabilityError,
+    isModalOpen,
+    dateRange,
+    timezone,
+    timezones,
+    openAvailabilityModal,
+    closeAvailabilityModal,
+    updateDateRange,
+    updateTimezone,
+    fetchAvailability,
+    exportAvailabilityCSV,
+    createEventFromAvailability
+  } = useAvailability();
   // State for calendar
   const [currentDate, setCurrentDate] = useState(new Date());
   const [selectedDate, setSelectedDate] = useState(new Date());
@@ -218,11 +237,25 @@ const Calendar = () => {
     }
   };
 
-  // Fetch events data on component mount
+  // Fetch events data on component mount  // Fetch events and availability on component mount
   useEffect(() => {
     fetchEvents();
+    fetchAvailability(); // Also fetch availability data for purple dots
   }, []);
-    // Filter events based on search and categories
+  // Fetch availability data when the current date (month/year) changes
+  useEffect(() => {
+    const year = currentDate.getFullYear();
+    const month = currentDate.getMonth();
+    
+    // Update date range to cover the current month view
+    const startDate = new Date(year, month, 1).toISOString().split('T')[0];
+    const endDate = new Date(year, month + 1, 0).toISOString().split('T')[0]; // Last day of current month
+    
+    // Update the date range and fetch availability
+    updateDateRange(startDate, endDate);
+  }, [currentDate.getFullYear(), currentDate.getMonth()]);
+
+  // Filter events based on search and categories
   useEffect(() => {
     let filtered = events;
     
@@ -2107,8 +2140,7 @@ const Calendar = () => {
         return null;
     }
   };
-  
-  // Format date for input
+    // Format date for input
   const formatDateForInput = (date) => {
     const year = date.getFullYear();
     const month = String(date.getMonth() + 1).padStart(2, '0');
@@ -2117,6 +2149,82 @@ const Calendar = () => {
     const minutes = String(date.getMinutes()).padStart(2, '0');
     
     return `${year}-${month}-${day}T${hours}:${minutes}`;
+  };
+  
+  // Handle creating events from availability slots
+  const handleCreateFromAvailability = async (timeSlot, userId) => {
+    try {
+      console.log('📅 Creating event from availability slot:', timeSlot);
+      
+      if (!timeSlot || !timeSlot.start_time || !timeSlot.end_time) {
+        throw new Error('Invalid time slot data. Missing start or end time.');
+      }
+      
+      // Prepare event data
+      const eventData = {
+        title: 'Meeting',
+        description: 'Meeting scheduled from availability check',
+        start_time: new Date(timeSlot.start_time),
+        end_time: new Date(timeSlot.end_time),
+        event_type: 'meeting',
+        priority: 'medium',
+        location: '',
+        is_all_day: false,
+        attendees: userId ? [userId] : [],
+        color: '#4ADE80' // Green color for availability-created events
+      };
+      
+      // Open the add event modal with prefilled data from availability
+      setNewEvent({
+        ...newEvent,
+        ...eventData
+      });
+      
+      // Close availability modal
+      closeAvailabilityModal();
+      
+      // Open add event modal
+      setShowAddEventModal(true);
+        success('Event details loaded from availability slot. Review and submit to create.');
+    } catch (err) {
+      console.error('Error preparing event from availability:', err);
+      showErrorNotification(err.message || 'Failed to prepare event from availability slot.');
+      
+      // If error occurs, keep the availability modal open
+      setIsModalOpen(true);
+    }  };
+    // Helper function to check if a date has availability data
+  const hasAvailabilityForDate = (date) => {
+    if (!availability || !availability.length) {
+      console.log('📅 No availability data:', { availability });
+      return false;
+    }
+    
+    const dateStr = date.toISOString().split('T')[0];
+    const hasSlots = availability.some(slot => {
+      const slotDate = new Date(slot.start_time).toISOString().split('T')[0];
+      return slotDate === dateStr;
+    });
+    
+    if (hasSlots) {
+      console.log('📅 Found availability for date:', dateStr, availability.filter(slot => {
+        const slotDate = new Date(slot.start_time).toISOString().split('T')[0];
+        return slotDate === dateStr;
+      }));
+    }
+    
+    return hasSlots;
+  };
+  
+  // Get availability slots for a specific date
+  const getAvailabilityForDate = (date) => {
+    if (!availability || !availability.length) return [];
+    
+    const dateStr = date.toISOString().split('T')[0];
+    return availability.filter(slot => {
+      const slotDate = new Date(slot.start_time).toISOString().split('T')[0];
+      return slotDate === dateStr;
+    });
   };
   
   // Render month view
@@ -2135,24 +2243,55 @@ const Calendar = () => {
         <div key={`empty-${i}`} className="calendar-day empty"></div>
       );
     }
-    
-    // Add cells for each day of the month
+      // Add cells for each day of the month
     for (let day = 1; day <= daysInMonth; day++) {
       const date = new Date(year, month, day);
       const dayEvents = getEventsForDate(date);
-      const hasEventsToday = dayEvents.length > 0;
+      const hasEventsToday = dayEvents.length > 0;      const hasAvailability = hasAvailabilityForDate(date);
+      const availabilitySlots = getAvailabilityForDate(date);
       
-      days.push(        <div 
+      // Debug logging
+      console.log(`📅 Day ${day}:`, {
+        date: date.toISOString().split('T')[0],
+        hasEventsToday,
+        hasAvailability,
+        availabilitySlots: availabilitySlots.length,
+        totalAvailability: availability?.length || 0
+      });
+        // Create tooltip text for availability
+      const createAvailabilityTooltip = () => {
+        if (!hasAvailability) return '';
+        
+        const slots = availabilitySlots.slice(0, 3); // Show first 3 slots
+        const tooltipText = slots.map(slot => {
+          const startTime = new Date(slot.start_time).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
+          const endTime = new Date(slot.end_time).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
+          return `${startTime} - ${endTime}`;
+        }).join('\n');
+        
+        if (availabilitySlots.length > 3) {
+          return `${tooltipText}\n+${availabilitySlots.length - 3} more slots`;
+        }
+        
+        return `Available slots:\n${tooltipText}`;
+      };
+      
+      days.push(
+        <div 
           key={`day-${day}`} 
           className={`calendar-day ${isToday(date) ? 'today' : ''} ${isSelected(date) ? 'selected' : ''}`}
           onClick={() => {
             setSelectedDate(date);
             openAddEventModal(date);
           }}
+          title={createAvailabilityTooltip()}
         >
           <div className="day-header">
             <span className="day-number">{day}</span>
-            {hasEventsToday && <span className="event-indicator"></span>}
+            <div className="day-indicators">
+              {hasEventsToday && <span className="event-indicator blue"></span>}
+              {hasAvailability && <span className="event-indicator purple"></span>}
+            </div>
           </div>
           <div className="day-events">
             {dayEvents.slice(0, 3).map(event => (
@@ -3203,9 +3342,11 @@ const Calendar = () => {
                 <FaTimes />
               </button>
             )}
-          </div>
-            <button className="btn-filter" onClick={() => setShowFilters(!showFilters)}>
+          </div>          <button className="btn-filter" onClick={() => setShowFilters(!showFilters)}>
             <FaFilter /> Filter
+          </button>
+          <button className="btn-availability" onClick={openAvailabilityModal}>
+            <FaUserFriends /> Check Availability
           </button>
           
           <button className="btn-primary" onClick={() => openAddEventModal()}>
@@ -3399,9 +3540,26 @@ const Calendar = () => {
           gap: var(--spacing-sm);
           transition: var(--transition);
         }
-        
-        .btn-filter:hover {
+          .btn-filter:hover {
           background-color: rgba(255, 255, 255, 0.3);
+        }
+        
+        .btn-availability {
+          background-color: rgba(72, 187, 120, 0.8);
+          color: var(--white);
+          border: none;
+          border-radius: var(--border-radius);
+          padding: var(--spacing-sm) var(--spacing-md);
+          font-size: var(--text-sm);
+          font-weight: 500;
+          display: flex;
+          align-items: center;
+          gap: var(--spacing-sm);
+          transition: var(--transition);
+        }
+        
+        .btn-availability:hover {
+          background-color: rgba(72, 187, 120, 1);
         }
         
         .btn-primary {
@@ -3675,12 +3833,17 @@ const Calendar = () => {
           background-color: rgba(79, 70, 229, 0.1);
           border: 2px solid var(--primary-color);
         }
-        
-        .day-header {
+          .day-header {
           display: flex;
           justify-content: space-between;
           align-items: center;
           margin-bottom: var(--spacing-xs);
+        }
+        
+        .day-indicators {
+          display: flex;
+          gap: 2px;
+          align-items: center;
         }
         
         .day-number {
@@ -3704,7 +3867,17 @@ const Calendar = () => {
           width: 6px;
           height: 6px;
           border-radius: 50%;
+          flex-shrink: 0;
+        }
+        
+        .event-indicator.blue {
           background-color: var(--primary-color);
+        }
+          .event-indicator.purple {
+          background-color: #8B5CF6;
+          box-shadow: 0 0 6px rgba(139, 92, 246, 0.8);
+          width: 8px;
+          height: 8px;
         }
         
         .day-events {
@@ -4854,8 +5027,7 @@ const Calendar = () => {
             flex-direction: column;
             gap: var(--spacing-sm);
           }
-          
-          .btn-filter, .btn-primary {
+            .btn-filter, .btn-availability, .btn-primary {
             width: 100%;
             justify-content: center;
           }
@@ -4864,8 +5036,21 @@ const Calendar = () => {
             flex-direction: column;
             align-items: flex-start;
           }
-        }
-      `}</style>
+        }      `}</style>      {/* User Availability Modal */}      <AvailabilityModal
+        isOpen={isModalOpen}
+        onClose={closeAvailabilityModal}
+        availability={availability}
+        isLoading={availabilityLoading}
+        error={availabilityError}
+        dateRange={dateRange}
+        timezone={timezone}
+        timezones={timezones}
+        onDateRangeChange={updateDateRange}
+        onTimezoneChange={updateTimezone}
+        onRefresh={fetchAvailability}
+        onExport={exportAvailabilityCSV}
+        onCreateEvent={handleCreateFromAvailability}
+      />
     </div>
   );
 };

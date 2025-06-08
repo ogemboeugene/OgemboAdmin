@@ -20,6 +20,7 @@ const SelectField = ({
   helperText,
   multiple = false,
   clearable = false,
+  isLoading = false,
   onClear,
   className = '',
   containerClassName = '',
@@ -72,26 +73,27 @@ const SelectField = ({
           {required && <span className="required-mark">*</span>}
         </label>
       )}
-      
-      <div className="select-wrapper">
+        <div className="select-wrapper">
         <select
           id={selectId}
           name={name}
           value={value}
           onChange={onChange}
           onBlur={onBlur}
-          disabled={disabled}
+          disabled={disabled || isLoading}
           multiple={multiple}
           className={selectClasses}
           {...rest}
         >
           {showPlaceholder && (
             <option value="" disabled>
-              {placeholder}
+              {isLoading ? 'Loading users...' : placeholder}
             </option>
           )}
           
-          {options.map((option) => (
+          {isLoading && !options.length ? (
+            <option value="" disabled>Loading...</option>
+          ) : options.map((option) => (
             <option 
               key={option.value} 
               value={option.value}

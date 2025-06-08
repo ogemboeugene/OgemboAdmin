@@ -52,42 +52,67 @@ const AvailabilityModal = ({
       size="large"
       className="availability-modal"
     >
-      <div className="availability-modal-content">
-        {/* Improved styling with CSS variables for dark mode */}
+      <div className="availability-modal-content">        {/* Comprehensive responsive and dark mode styling */}
         <style jsx>{`
+          /* Base Modal Styles */
           .availability-modal-content {
             background: var(--modal-bg, #ffffff);
             color: var(--modal-text, #1f2937);
             min-height: 400px;
+            transition: all 0.3s ease;
+            position: relative;
+            overflow: hidden;
           }
           
+          /* Header Styles */
           .availability-header {
             background: linear-gradient(135deg, var(--primary-gradient-start, #3b82f6) 0%, var(--primary-gradient-end, #1d4ed8) 100%);
-            padding: 1.5rem;
+            padding: var(--header-padding, 1.5rem);
             margin: -1rem -1rem 1.5rem -1rem;
             border-radius: 0.75rem 0.75rem 0 0;
             color: white;
+            box-shadow: var(--header-shadow, 0 4px 6px -1px rgba(0, 0, 0, 0.1));
           }
           
+          .availability-header h3 {
+            font-size: var(--header-title-size, 1.25rem);
+            font-weight: 600;
+            margin: 0 0 0.5rem 0;
+            line-height: 1.2;
+          }
+          
+          .availability-header p {
+            font-size: var(--header-subtitle-size, 0.875rem);
+            opacity: 0.9;
+            margin: 0;
+            line-height: 1.4;
+          }
+          
+          /* Controls Section */
           .availability-controls {
             background: var(--controls-bg, #f8fafc);
             border: 1px solid var(--border-color, #e2e8f0);
-            border-radius: 0.75rem;
-            padding: 1.5rem;
+            border-radius: var(--controls-border-radius, 0.75rem);
+            padding: var(--controls-padding, 1.5rem);
             margin-bottom: 1.5rem;
+            transition: all 0.3s ease;
+            box-shadow: var(--controls-shadow, 0 1px 3px 0 rgba(0, 0, 0, 0.1));
           }
           
+          /* Date Range Section */
           .date-range-section {
             display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 1rem;
+            grid-template-columns: var(--date-grid-columns, 1fr 1fr);
+            gap: var(--date-grid-gap, 1rem);
             margin-bottom: 1rem;
           }
           
+          /* Timezone Section */
           .timezone-section {
             margin-bottom: 1.5rem;
           }
           
+          /* Actions Section */
           .actions-section {
             display: flex;
             justify-content: space-between;
@@ -98,57 +123,124 @@ const AvailabilityModal = ({
             border-top: 1px solid var(--border-color, #e2e8f0);
           }
           
+          /* Current Time Display */
           .current-time-display {
             background: var(--info-bg, #eff6ff);
             border: 1px solid var(--info-border, #bfdbfe);
             border-radius: 0.5rem;
-            padding: 0.75rem;
-            font-size: 0.875rem;
+            padding: var(--time-display-padding, 0.75rem);
+            font-size: var(--time-display-font-size, 0.875rem);
             color: var(--info-text, #1e40af);
             display: flex;
             align-items: center;
             gap: 0.5rem;
+            transition: all 0.3s ease;
           }
           
           .time-indicator {
-            width: 8px;
-            height: 8px;
+            width: var(--time-indicator-size, 8px);
+            height: var(--time-indicator-size, 8px);
             border-radius: 50%;
-            background: #10b981;
+            background: var(--time-indicator-color, #10b981);
             animation: pulse 2s infinite;
+            flex-shrink: 0;
           }
           
+          /* Animations */
           @keyframes pulse {
-            0%, 100% { opacity: 1; }
-            50% { opacity: 0.5; }
+            0%, 100% { opacity: 1; transform: scale(1); }
+            50% { opacity: 0.5; transform: scale(1.1); }
           }
           
+          @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+          }
+          
+          /* Error Display */
           .error-display {
             background: var(--error-bg, #fef2f2);
             border: 1px solid var(--error-border, #fecaca);
-            border-left: 4px solid #ef4444;
+            border-left: 4px solid var(--error-accent, #ef4444);
             border-radius: 0.5rem;
-            padding: 1rem;
+            padding: var(--error-padding, 1rem);
             margin-bottom: 1rem;
             color: var(--error-text, #dc2626);
+            animation: fadeIn 0.3s ease;
           }
           
+          .error-display svg {
+            flex-shrink: 0;
+            width: 1.25rem;
+            height: 1.25rem;
+          }
+          
+          /* Loading Display */
           .loading-display {
             display: flex;
             flex-direction: column;
             align-items: center;
             justify-content: center;
-            padding: 3rem;
+            padding: var(--loading-padding, 3rem);
             color: var(--muted-text, #6b7280);
+            animation: fadeIn 0.3s ease;
           }
           
+          .loading-display .animate-spin {
+            width: var(--loading-spinner-size, 3rem);
+            height: var(--loading-spinner-size, 3rem);
+            border-width: 3px;
+            margin-bottom: 1rem;
+          }
+          
+          /* No Data Display */
           .no-data-display {
             text-align: center;
-            padding: 3rem;
+            padding: var(--no-data-padding, 3rem);
             color: var(--muted-text, #6b7280);
+            animation: fadeIn 0.3s ease;
           }
           
-          /* Dark mode support */
+          .no-data-display svg {
+            width: var(--no-data-icon-size, 4rem);
+            height: var(--no-data-icon-size, 4rem);
+            margin-bottom: 1rem;
+            opacity: 0.6;
+          }
+          
+          /* Button Styles */
+          .export-btn {
+            transition: all 0.2s ease;
+          }
+          
+          .export-btn:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.15);
+          }
+          
+          /* Dark Mode Support */
+          @media (prefers-color-scheme: dark) {
+            .availability-modal-content {
+              --modal-bg: #1f2937;
+              --modal-text: #f9fafb;
+              --controls-bg: #374151;
+              --border-color: #4b5563;
+              --info-bg: #1e3a8a;
+              --info-border: #3b82f6;
+              --info-text: #bfdbfe;
+              --error-bg: #7f1d1d;
+              --error-border: #dc2626;
+              --error-text: #fca5a5;
+              --error-accent: #f87171;
+              --muted-text: #9ca3af;
+              --primary-gradient-start: #4f46e5;
+              --primary-gradient-end: #7c3aed;
+              --header-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.3);
+              --controls-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.3);
+              --time-indicator-color: #34d399;
+            }
+          }
+          
           .dark .availability-modal-content {
             --modal-bg: #1f2937;
             --modal-text: #f9fafb;
@@ -160,25 +252,190 @@ const AvailabilityModal = ({
             --error-bg: #7f1d1d;
             --error-border: #dc2626;
             --error-text: #fca5a5;
+            --error-accent: #f87171;
             --muted-text: #9ca3af;
             --primary-gradient-start: #4f46e5;
             --primary-gradient-end: #7c3aed;
+            --header-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.3);
+            --controls-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.3);
+            --time-indicator-color: #34d399;
           }
           
-          @media (max-width: 768px) {
-            .date-range-section {
-              grid-template-columns: 1fr;
+          /* Responsive Design - Extra Large Screens */
+          @media (min-width: 1440px) {
+            .availability-modal-content {
+              --header-padding: 2rem;
+              --controls-padding: 2rem;
+              --header-title-size: 1.5rem;
+              --header-subtitle-size: 1rem;
+              --date-grid-gap: 1.5rem;
+              --loading-padding: 4rem;
+              --no-data-padding: 4rem;
+              --no-data-icon-size: 5rem;
+              --loading-spinner-size: 4rem;
+            }
+          }
+          
+          /* Responsive Design - Large Screens */
+          @media (min-width: 1024px) and (max-width: 1439px) {
+            .availability-modal-content {
+              --header-padding: 1.75rem;
+              --controls-padding: 1.75rem;
+              --header-title-size: 1.375rem;
+              --date-grid-gap: 1.25rem;
+            }
+          }
+          
+          /* Responsive Design - Tablet */
+          @media (min-width: 768px) and (max-width: 1023px) {
+            .availability-modal-content {
+              --header-padding: 1.5rem;
+              --controls-padding: 1.5rem;
+              --header-title-size: 1.25rem;
+              --date-grid-columns: 1fr 1fr;
+              --date-grid-gap: 1rem;
+              --time-display-padding: 1rem;
+            }
+            
+            .actions-section {
+              flex-direction: row;
+              flex-wrap: wrap;
+              gap: 1rem;
+            }
+            
+            .actions-section > div {
+              flex: 1;
+              min-width: 200px;
+            }
+          }
+          
+          /* Responsive Design - Mobile */
+          @media (max-width: 767px) {
+            .availability-modal-content {
+              --header-padding: 1rem;
+              --controls-padding: 1rem;
+              --header-title-size: 1.125rem;
+              --header-subtitle-size: 0.8rem;
+              --date-grid-columns: 1fr;
+              --date-grid-gap: 0.75rem;
+              --controls-border-radius: 0.5rem;
+              --time-display-padding: 0.75rem;
+              --time-display-font-size: 0.8rem;
+              --time-indicator-size: 6px;
+              --loading-padding: 2rem;
+              --no-data-padding: 2rem;
+              --no-data-icon-size: 3rem;
+              --loading-spinner-size: 2.5rem;
+              --error-padding: 0.75rem;
+            }
+            
+            .availability-header {
+              margin: -1rem -0.5rem 1rem -0.5rem;
+              border-radius: 0.5rem 0.5rem 0 0;
             }
             
             .actions-section {
               flex-direction: column;
               align-items: stretch;
+              gap: 0.75rem;
+            }
+            
+            .actions-section button {
+              width: 100%;
+              justify-content: center;
+            }
+            
+            .current-time-display {
+              flex-direction: column;
+              text-align: center;
+              gap: 0.5rem;
+            }
+            
+            .error-display {
+              padding: 0.75rem;
+              font-size: 0.875rem;
+            }
+            
+            .loading-display p {
+              font-size: 0.875rem;
+            }
+            
+            .no-data-display h3 {
+              font-size: 1rem;
+            }
+            
+            .no-data-display p {
+              font-size: 0.875rem;
+            }
+          }
+          
+          /* Responsive Design - Small Mobile */
+          @media (max-width: 480px) {
+            .availability-modal-content {
+              --header-padding: 0.75rem;
+              --controls-padding: 0.75rem;
+              --header-title-size: 1rem;
+              --header-subtitle-size: 0.75rem;
+              --date-grid-gap: 0.5rem;
+              --time-display-font-size: 0.75rem;
+              --loading-padding: 1.5rem;
+              --no-data-padding: 1.5rem;
+              --no-data-icon-size: 2.5rem;
+              --loading-spinner-size: 2rem;
             }
             
             .availability-header {
-              margin: -1rem -0.5rem 1rem -0.5rem;
-              padding: 1rem;
+              margin: -0.75rem -0.25rem 0.75rem -0.25rem;
             }
+            
+            .current-time-display {
+              padding: 0.5rem;
+              font-size: 0.75rem;
+            }
+            
+            .error-display {
+              padding: 0.5rem;
+              font-size: 0.8rem;
+            }
+          }
+          
+          /* High contrast mode support */
+          @media (prefers-contrast: high) {
+            .availability-modal-content {
+              --border-color: #000000;
+              --error-border: #000000;
+              --info-border: #000000;
+            }
+            
+            .availability-header {
+              background: #000000;
+              color: #ffffff;
+            }
+            
+            .time-indicator {
+              border: 2px solid currentColor;
+            }
+          }
+          
+          /* Reduced motion support */
+          @media (prefers-reduced-motion: reduce) {
+            .time-indicator {
+              animation: none;
+            }
+            
+            .availability-modal-content,
+            .availability-controls,
+            .current-time-display,
+            .export-btn {
+              transition: none;
+            }
+            
+            .error-display,
+            .loading-display,
+            .no-data-display {
+              animation: none;
+            }
+          }
           }
         `}</style>
         

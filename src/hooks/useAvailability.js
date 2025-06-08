@@ -31,14 +31,15 @@ const COMMON_TIMEZONES = [
  * Handles fetching availability data and modal state
  */
 export function useAvailability() {
-  const [availability, setAvailability] = useState([]);
+  const [availability, setAvailability] = useState(null);
     // Add debugging when availability changes
   useEffect(() => {
     console.log('📅 Availability state changed:', {
       availability,
-      isArray: Array.isArray(availability),
-      length: availability?.length,
-      sample: Array.isArray(availability) ? availability.slice(0, 2) : 'Not an array'
+      isObject: typeof availability === 'object' && availability !== null,
+      hasUsers: availability?.users && Array.isArray(availability.users),
+      hasSummary: availability?.summary,
+      usersCount: availability?.users?.length || 0
     });
   }, [availability]);
   const [isLoading, setIsLoading] = useState(false);
@@ -49,6 +50,9 @@ export function useAvailability() {
     endDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0], // Week from now
   });  const [timezone, setTimezone] = useState(getUserTimezone());
   const [timezones] = useState(COMMON_TIMEZONES);
+  
+  // State for smart conflict detection
+  const [events, setEvents] = useState([]);
 
   // Cache last request parameters and result
   const availabilityCache = useRef({
@@ -56,6 +60,50 @@ export function useAvailability() {
     result: null,
     timestamp: null
   });
+
+  /**
+   * Update events for smart conflict detection
+   * @param {Array} eventsList - Array of events to check for conflicts
+   */
+  const updateEvents = useCallback((eventsList) => {
+    console.log('📅 Updating events for smart conflict detection:', eventsList?.length);
+    setEvents(eventsList || []);
+  }, []);
+
+  /**
+   * Check for conflicts between availability and existing events
+   * @param {Array} availabilitySlots - Available time slots
+   * @param {Array} existingEvents - Current events
+   * @returns {Array} - Conflicts found
+   */
+  const checkConflicts = useCallback((availabilitySlots, existingEvents) => {
+    if (!availabilitySlots || !existingEvents) return [];
+    
+    const conflicts = [];
+    
+    existingEvents.forEach(event => {
+      const eventStart = new Date(event.start);
+      const eventEnd = new Date(event.end);
+      
+      availabilitySlots.forEach(slot => {
+        const slotStart = new Date(slot.start_time);
+        const slotEnd = new Date(slot.end_time);
+        
+        // Check for overlap
+        if (eventStart < slotEnd && eventEnd > slotStart) {
+          conflicts.push({
+            event: event,
+            slot: slot,
+            type: 'overlap',
+            description: `Event "${event.title}" overlaps with availability slot`
+          });
+        }
+      });
+    });
+    
+    console.log('📅 Smart conflict detection found conflicts:', conflicts.length);
+    return conflicts;
+  }, []);
 
   /**
    * Fetch availability data from the API
@@ -121,19 +169,53 @@ export function useAvailability() {
         null, // No user filtering needed
         timezone
       );
+        console.log('📅 API Response:', response);
+
+      // API returns data in the format { success: true, data: { availability: { users: [...] } } }
+      const availabilityResponse = response.data.data?.availability || response.data?.availability;
+        console.log('📅 Raw availability response:', availabilityResponse);
       
-      console.log('📅 API Response:', response);      // API returns data in the format { success: true, data: { availability: {...} } }
-      const availabilityData = response.data.data?.availability || response.data?.availability;
-      
-      console.log('📅 Processed availability data:', availabilityData);
-      
-      // Ensure we always have an array
-      let finalAvailabilityData = Array.isArray(availabilityData) ? availabilityData : [];
-      
-      // If no availability data is returned, generate some mock data for testing
-      if (!availabilityData || finalAvailabilityData.length === 0) {
-        console.log('📅 No availability data from API, generating mock data for testing');
-        finalAvailabilityData = generateMockAvailability(dateRange.startDate, dateRange.endDate);
+      let finalAvailabilityData = null;      // Handle the nested API response format
+      if (availabilityResponse && availabilityResponse.users && Array.isArray(availabilityResponse.users)) {        // Extract availability data from the users array and ensure complete summary structure
+        const existingSummary = availabilityResponse.summary || {};
+        finalAvailabilityData = {
+          users: availabilityResponse.users,
+          summary: {
+            total_users: existingSummary.total_users || availabilityResponse.users.length,
+            total_days: existingSummary.total_days || Math.ceil((new Date(dateRange.endDate) - new Date(dateRange.startDate)) / (1000 * 60 * 60 * 24)) + 1,
+            common_free_slots: existingSummary.common_free_slots || [],
+            date_range: existingSummary.date_range || {
+              start_date: dateRange.startDate,
+              end_date: dateRange.endDate
+            }
+          }
+        };
+        console.log('📅 Processed availability data from users array:', {
+          finalAvailabilityData,
+          hasUsers: !!finalAvailabilityData.users,
+          usersLength: finalAvailabilityData.users?.length,
+          hasSummary: !!finalAvailabilityData.summary,
+          hasDateRange: !!finalAvailabilityData.summary?.date_range,
+          summaryStructure: finalAvailabilityData.summary
+        });
+      } else if (Array.isArray(availabilityResponse)) {
+        // Fallback for simple array format - convert to expected object structure
+        finalAvailabilityData = {
+          users: availabilityResponse,
+          summary: {
+            total_users: availabilityResponse.length,
+            total_days: Math.ceil((new Date(dateRange.endDate) - new Date(dateRange.startDate)) / (1000 * 60 * 60 * 24)) + 1,
+            common_free_slots: [],
+            date_range: {
+              start_date: dateRange.startDate,
+              end_date: dateRange.endDate
+            }
+          }
+        };
+        console.log('📅 Using simple array format, converted to object:', finalAvailabilityData);      } else {
+        // If no valid availability data is returned, generate some mock data for testing
+        console.log('📅 No valid availability data from API, generating mock data for testing');
+        finalAvailabilityData = generateMockAvailability(dateRange.startDate, dateRange.endDate, events);
       }
         // Update cache
       availabilityCache.current = {
@@ -151,10 +233,9 @@ export function useAvailability() {
         statusText: err.response?.statusText,
         data: err.response?.data
       });      setError(err.response?.data?.message || err.message || 'Failed to fetch availability data');
-      
-      // Generate mock data for testing when API fails
+        // Generate mock data for testing when API fails
       console.log('📅 API failed, generating mock data for testing');
-      const mockData = generateMockAvailability(dateRange.startDate, dateRange.endDate);
+      const mockData = generateMockAvailability(dateRange.startDate, dateRange.endDate, events);
       setAvailability(mockData);
     } finally {
       setIsLoading(false);
@@ -347,47 +428,209 @@ export function useAvailability() {
     dates: dateState,
     timezones: timezoneState,
     availabilityData: availabilityState,
-    createEvent: createEventFromAvailability
+    createEvent: createEventFromAvailability,
+    updateEvents,
+    checkConflicts
   };
 }
 
 /**
- * Generate mock availability data for testing purposes
+ * Generate mock availability data with business rules applied
+ * Business Rules:
+ * 1. Saturday - no available slots (no dots shown)
+ * 2. Sunday - only half-day availability
+ * 3. Time alignment - slots start at round hours (not 9:04am)
+ * 4. Buffer time - if event ends at 11:40am, next slot starts at 12:00pm
+ * 5. Slot duration - 2-hour slots
+ * 6. Breaks - include necessary breaks between slots
+ * 7. Event conflict checking - ensure slots don't overlap with existing events
  */
-const generateMockAvailability = (startDate, endDate) => {
-  const mockData = [];
+const generateMockAvailability = (startDate, endDate, existingEvents = []) => {
   const start = new Date(startDate);
   const end = new Date(endDate);
   
-  // Generate availability slots for random dates within the range
+  // Create mock availability data in the expected nested format
+  const mockAvailabilityDays = [];
+  
+  // Generate availability slots for each day in the range
   for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
-    // Add availability on random days (about 40% of days)
-    if (Math.random() > 0.6) {
-      const date = new Date(d);
-      
-      // Add 1-3 availability slots per day
-      const slotsCount = Math.floor(Math.random() * 3) + 1;
-      for (let i = 0; i < slotsCount; i++) {
-        const startHour = 9 + (i * 3); // 9 AM, 12 PM, 3 PM
-        const startTime = new Date(date);
-        startTime.setHours(startHour, 0, 0, 0);
-        
-        const endTime = new Date(startTime);
-        endTime.setHours(startHour + 2); // 2-hour slots
-        
-        mockData.push({
-          id: `mock-${date.toISOString().split('T')[0]}-${i}`,
-          start_time: startTime.toISOString(),
-          end_time: endTime.toISOString(),
-          user_id: 'current-user',
-          user_name: 'Current User',
-          status: 'available'
-        });
-      }
+    const date = new Date(d);
+    const dateString = date.toISOString().split('T')[0];
+    const dayOfWeek = date.getDay(); // 0 = Sunday, 6 = Saturday
+    
+    // BUSINESS RULE 1: Saturday - no available slots
+    if (dayOfWeek === 6) {
+      mockAvailabilityDays.push({
+        date: dateString,
+        status: 'unavailable',
+        free_periods: [],
+        busy_periods: []
+      });
+      continue;
     }
+    
+    // Get existing events for this date to check for conflicts
+    const dayEvents = getEventsForDate(date, existingEvents);
+    
+    // Generate availability slots based on day type
+    const freePeriods = generateDayAvailability(date, dayOfWeek, dayEvents);
+    
+    // Determine status based on availability
+    const status = freePeriods.length > 0 ? 'available' : 'busy';
+    
+    mockAvailabilityDays.push({
+      date: dateString,
+      status: status,
+      free_periods: freePeriods,
+      busy_periods: generateBusyPeriods(date, dayEvents)
+    });
   }
   
-  console.log('📅 Generated mock availability data:', mockData);
+  /**
+   * Generate availability slots for a specific day
+   */
+  function generateDayAvailability(date, dayOfWeek, dayEvents) {
+    const freePeriods = [];
+    
+    // BUSINESS RULE 2: Sunday - only half-day availability (morning only)
+    if (dayOfWeek === 0) {
+      // Sunday: 9:00 AM - 1:00 PM (4 hours, 2 slots with break)
+      const slots = [
+        { start: 9, end: 11 },   // 9:00 AM - 11:00 AM
+        { start: 12, end: 14 }   // 12:00 PM - 2:00 PM (with 1-hour break)
+      ];
+      
+      slots.forEach(slot => {
+        const period = createTimeSlot(date, slot.start, slot.end);
+        if (!hasConflictWithEvents(period, dayEvents)) {
+          freePeriods.push(period);
+        }
+      });
+      
+      return freePeriods;
+    }
+    
+    // Regular weekdays (Monday-Friday): Full day availability
+    // BUSINESS RULE 3 & 5: Round hour start times, 2-hour slots
+    // BUSINESS RULE 6: Include breaks between slots
+    const standardSlots = [
+      { start: 9, end: 11 },   // 9:00 AM - 11:00 AM
+      { start: 12, end: 14 },  // 12:00 PM - 2:00 PM (1-hour break after morning)
+      { start: 15, end: 17 }   // 3:00 PM - 5:00 PM (1-hour break after afternoon)
+    ];
+    
+    // Add availability slots, checking for conflicts with existing events
+    standardSlots.forEach(slot => {
+      const period = createTimeSlot(date, slot.start, slot.end);
+      
+      // BUSINESS RULE 7: Event conflict checking
+      if (!hasConflictWithEvents(period, dayEvents)) {
+        freePeriods.push(period);
+      }
+    });
+    
+    return freePeriods;
+  }
+  
+  /**
+   * Create a time slot with proper ISO formatting
+   */
+  function createTimeSlot(date, startHour, endHour) {
+    const startTime = new Date(date);
+    startTime.setHours(startHour, 0, 0, 0); // BUSINESS RULE 3: Round hours
+    
+    const endTime = new Date(date);
+    endTime.setHours(endHour, 0, 0, 0);
+    
+    return {
+      start_time: startTime.toISOString(),
+      end_time: endTime.toISOString()
+    };
+  }
+  
+  /**
+   * Check if a time slot conflicts with existing events
+   * BUSINESS RULE 4: Buffer time - 20 minutes after events, round to next hour
+   */
+  function hasConflictWithEvents(timeSlot, dayEvents) {
+    const slotStart = new Date(timeSlot.start_time);
+    const slotEnd = new Date(timeSlot.end_time);
+    
+    for (const event of dayEvents) {
+      const eventStart = new Date(event.start);
+      const eventEnd = new Date(event.end);
+      
+      // Add 20-minute buffer after event end, then round up to next hour
+      const bufferEnd = new Date(eventEnd.getTime() + 20 * 60 * 1000); // +20 minutes
+      const roundedBufferEnd = new Date(bufferEnd);
+      roundedBufferEnd.setHours(roundedBufferEnd.getHours() + 1, 0, 0, 0); // Round up to next hour
+      
+      // Check for overlap with buffer consideration
+      if (slotStart < roundedBufferEnd && slotEnd > eventStart) {
+        return true; // Conflict found
+      }
+    }
+    
+    return false; // No conflict
+  }
+  
+  /**
+   * Generate busy periods based on existing events
+   */
+  function generateBusyPeriods(date, dayEvents) {
+    return dayEvents.map(event => ({
+      start_time: event.start,
+      end_time: event.end,
+      event_title: event.title || 'Busy',
+      is_all_day: event.allDay || false
+    }));
+  }
+  
+  /**
+   * Get events for a specific date from existing events array
+   */
+  function getEventsForDate(date, events) {
+    const dateStr = date.toISOString().split('T')[0];
+    
+    return events.filter(event => {
+      const eventDate = new Date(event.start).toISOString().split('T')[0];
+      return eventDate === dateStr;
+    });
+  }
+  // Return in the expected nested format
+  const mockData = {
+    users: [
+      {
+        user_id: 1,
+        user: {
+          email: 'test@example.com',
+          profile: {
+            firstName: 'Test',
+            lastName: 'User'
+          }
+        },
+        availability: mockAvailabilityDays
+      }
+    ],
+    summary: {
+      total_users: 1,
+      total_days: Math.ceil((new Date(endDate) - new Date(startDate)) / (1000 * 60 * 60 * 24)) + 1,
+      common_free_slots: [], // Add empty common free slots for now
+      date_range: {
+        start_date: startDate,
+        end_date: endDate
+      }
+    }
+  };
+  
+  console.log('📅 Generated mock availability data:', {
+    mockData,
+    hasUsers: !!mockData.users,
+    usersLength: mockData.users?.length,
+    hasSummary: !!mockData.summary,
+    hasDateRange: !!mockData.summary?.date_range,
+    summaryStructure: mockData.summary
+  });
   return mockData;
 };
 

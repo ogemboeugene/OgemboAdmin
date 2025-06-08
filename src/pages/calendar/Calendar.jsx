@@ -67,7 +67,9 @@ const Calendar = () => {
     updateTimezone,
     fetchAvailability,
     exportAvailabilityCSV,
-    createEventFromAvailability
+    createEventFromAvailability,
+    updateEvents,
+    checkConflicts
   } = useAvailability();
   // State for calendar
   const [currentDate, setCurrentDate] = useState(new Date());
@@ -293,8 +295,15 @@ const Calendar = () => {
       
       // Update the ref for immediate access
       currentEventRef.current = currentEvent;
+    }  }, [currentEvent?.attendeesWithStatus, currentEvent?.attendees, currentEvent?.lastAttendeesUpdate]);
+
+  // Update events in availability hook for smart conflict detection
+  useEffect(() => {
+    if (events && events.length > 0) {
+      updateEvents(events);
     }
-  }, [currentEvent?.attendeesWithStatus, currentEvent?.attendees, currentEvent?.lastAttendeesUpdate]);
+  }, [events, updateEvents]);
+
     // Handle click outside of modal
   useEffect(() => {
     const handleClickOutside = (event) => {
@@ -2192,39 +2201,74 @@ const Calendar = () => {
       
       // If error occurs, keep the availability modal open
       setIsModalOpen(true);
-    }  };
-    // Helper function to check if a date has availability data
+    }  };  // Helper function to check if a date has availability data
   const hasAvailabilityForDate = (date) => {
-    if (!availability || !availability.length) {
+    if (!availability || !availability.users || !Array.isArray(availability.users)) {
       console.log('📅 No availability data:', { availability });
       return false;
     }
     
+    // BUSINESS RULE 1: Saturday - no available slots (no dots shown)
+    const dayOfWeek = date.getDay(); // 0 = Sunday, 6 = Saturday
+    if (dayOfWeek === 6) {
+      console.log('📅 Saturday detected - no availability shown by business rule');
+      return false;
+    }
+    
     const dateStr = date.toISOString().split('T')[0];
-    const hasSlots = availability.some(slot => {
-      const slotDate = new Date(slot.start_time).toISOString().split('T')[0];
-      return slotDate === dateStr;
-    });
+    let hasSlots = false;
+    
+    // Check all users' availability for the specific date
+    for (const user of availability.users) {
+      if (user.availability && Array.isArray(user.availability)) {
+        // Find the availability entry for this specific date
+        const dayAvailability = user.availability.find(dayItem => dayItem.date === dateStr);
+        if (dayAvailability && dayAvailability.free_periods && dayAvailability.free_periods.length > 0) {
+          hasSlots = true;
+          break; // Found at least one slot, no need to check further
+        }
+      }
+    }
     
     if (hasSlots) {
-      console.log('📅 Found availability for date:', dateStr, availability.filter(slot => {
-        const slotDate = new Date(slot.start_time).toISOString().split('T')[0];
-        return slotDate === dateStr;
-      }));
+      console.log('📅 Found availability for date:', dateStr);
     }
     
     return hasSlots;
-  };
-  
-  // Get availability slots for a specific date
+  };  // Get availability slots for a specific date
   const getAvailabilityForDate = (date) => {
-    if (!availability || !availability.length) return [];
+    if (!availability || !availability.users || !Array.isArray(availability.users)) return [];
+    
+    // BUSINESS RULE 1: Saturday - no available slots
+    const dayOfWeek = date.getDay(); // 0 = Sunday, 6 = Saturday
+    if (dayOfWeek === 6) {
+      return []; // Return empty array for Saturdays
+    }
     
     const dateStr = date.toISOString().split('T')[0];
-    return availability.filter(slot => {
-      const slotDate = new Date(slot.start_time).toISOString().split('T')[0];
-      return slotDate === dateStr;
+    const allSlotsForDate = [];
+    
+    // Collect availability slots from all users for the specified date
+    availability.users.forEach(user => {
+      if (user.availability && Array.isArray(user.availability)) {
+        // Find the availability entry for this specific date
+        const dayAvailability = user.availability.find(dayItem => dayItem.date === dateStr);
+        
+        if (dayAvailability && dayAvailability.free_periods && Array.isArray(dayAvailability.free_periods)) {
+          // Add user information to each slot for reference
+          const slotsWithUserInfo = dayAvailability.free_periods.map(slot => ({
+            ...slot,
+            user_id: user.user_id,
+            user_name: user.user_name || user.name,
+            date: dayAvailability.date,
+            status: dayAvailability.status
+          }));
+          allSlotsForDate.push(...slotsWithUserInfo);
+        }
+      }
     });
+    
+    return allSlotsForDate;
   };
   
   // Render month view

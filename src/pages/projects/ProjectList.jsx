@@ -896,7 +896,7 @@ const ProjectList = () => {
                     </div>
                   </div>
                   
-                  <div className="project-info">
+                  <div className="project-infos">
                     <div className="project-header">
                       <h3 className="project-title">{project.title}</h3>
                       <button 
@@ -1282,7 +1282,7 @@ const ProjectList = () => {
           gap: 16px;
         }
         
-        .search-box {
+        .project-list-container .search-box {
           position: relative;
           flex: 1;
           min-width: 250px;
@@ -1296,7 +1296,7 @@ const ProjectList = () => {
           color: var(--gray-500);
         }
         
-        .search-box input {
+        .project-list-container .search-box input {
           width: 100%;
           padding: 10px 40px 10px 36px;
           border: 1px solid var(--gray-300);
@@ -1305,7 +1305,7 @@ const ProjectList = () => {
           transition: all 0.2s ease;
         }
         
-        .search-box input:focus {
+        .project-list-container .search-box input:focus {
           outline: none;
           border-color: var(--primary-color);
           box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.2);
@@ -1759,7 +1759,7 @@ const ProjectList = () => {
           color: var(--white);
         }
         
-        .project-info {
+        .project-infos {
           padding: 16px;
           flex: 1;
           display: flex;
@@ -2361,7 +2361,7 @@ const ProjectList = () => {
             background: rgba(129, 140, 248, 0.2);
           }
           
-          .search-box input,
+          .project-list-container .search-box input,
           .filter-select,
           .filter-btn,
           .sort-btn {

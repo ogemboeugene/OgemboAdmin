@@ -873,9 +873,9 @@ const Dashboard = () => {
         
         <div className="dashboard-sections">
           <div className="dashboard-section projects-section">
-            <div className="section-header">
+            <div className="section-headers">
               <h3><FaRocket /> Recent Projects</h3>
-              <Link to="/projects/new" className="btn-gradient">
+              <Link to="/projects/new" className="btn-outline">
                 <FaPlus /> Add New
               </Link>
             </div>
@@ -926,7 +926,7 @@ const Dashboard = () => {
                       </div>
                       
                       <div className="project-details">
-                        <div className="project-info">
+                        <div className="project-info-details">
                           <h4>{project.title}</h4>
                           <p>{truncateText(project.description, 80)}</p>
                           
@@ -980,8 +980,8 @@ const Dashboard = () => {
               </div>
             )}
           </div>
-            <div className="dashboard-section deadlines-section">
-            <div className="section-header">
+          <div className="dashboard-section deadlines-section">
+            <div className="section-headers">
               <h3><FaRegClock /> Upcoming Deadlines</h3>
               <div className="deadline-filters">
                 <select 
@@ -1079,10 +1079,11 @@ const Dashboard = () => {
                   ))}
                 </div>
               )}
-            </div>          </div>
+            </div>          
+          </div>
           
           <div className="dashboard-section events-section">
-            <div className="section-header">
+            <div className="section-headers">
               <h3><FaCalendarPlus /> Upcoming Events</h3>
               <Link to="/calendar" className="btn-outline">
                 <FaPlus /> Add Event
@@ -1151,7 +1152,7 @@ const Dashboard = () => {
           </div>
           
           <div className="dashboard-section quick-actions-section">
-            <div className="section-header">
+            <div className="section-headers">
               <h3><FaLightbulb /> Quick Actions</h3>
             </div>
             
@@ -1224,8 +1225,9 @@ const Dashboard = () => {
                 </div>
               </motion.div>
             </div>
-          </div>            <div className="dashboard-section activity-section">
-            <div className="section-header">
+          </div>            
+          <div className="dashboard-section activity-section">
+            <div className="section-headers">
               <h3><FaChartLine /> Recent Activity</h3>
               <div className="filter-controls">
                 <select 
@@ -1289,7 +1291,7 @@ const Dashboard = () => {
           
           {/* New Section: Portfolio Export */}
           <div className="dashboard-section export-section">
-            <div className="section-header">
+            <div className="section-headers">
               <h3><FaDownload /> Export Portfolio</h3>
             </div>
             
@@ -2425,14 +2427,14 @@ const Dashboard = () => {
           margin-bottom: var(--spacing-xl);
         }
         
-        .section-header {
+        .section-headers {
           display: flex;
           justify-content: space-between;
           align-items: center;
           margin-bottom: var(--spacing-lg);
         }
         
-        .section-header h3 {
+        .section-headers h3 {
           font-size: var(--text-lg);
           color: var(--gray-900);
           font-weight: 600;
@@ -2441,7 +2443,12 @@ const Dashboard = () => {
           gap: var(--spacing-sm);
         }
         
-        .section-header h3 svg {
+        .section-headers h3 svg {
+          color: var(--primary-color);
+        }
+
+        .deadlines-section .section-headers h3 svg{
+          font-size: 2.25rem;
           color: var(--primary-color);
         }
         
@@ -2579,18 +2586,18 @@ const Dashboard = () => {
           flex: 1;
         }
         
-        .project-info {
+        .project-info-details {
           flex: 1;
         }
         
-        .project-info h4 {
+        .project-info-details h4 {
           font-size: var(--text-lg);
           color: var(--gray-900);
           margin-bottom: var(--spacing-sm);
           font-weight: 600;
         }
         
-        .project-info p {
+        .project-info-details p {
           color: var(--gray-600);
           font-size: var(--text-sm);
           margin-bottom: var(--spacing-md);
@@ -2958,7 +2965,7 @@ const Dashboard = () => {
         .timeline-container.scrollable,
         .deadlines-grid.scrollable,
         .events-grid.scrollable {
-          max-height: 400px;
+          max-height: auto;
           overflow-y: auto;
           padding-right: var(--spacing-xs);
         }
@@ -3302,7 +3309,7 @@ const Dashboard = () => {
             padding: var(--spacing-md);
           }
           
-          .section-header {
+          .section-headers {
             flex-direction: column;
             align-items: flex-start;
             gap: var(--spacing-sm);

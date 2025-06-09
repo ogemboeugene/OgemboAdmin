@@ -1,6 +1,7 @@
 import React from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate, Outlet } from 'react-router-dom';
 import { useAuth } from './context/AuthContext';
+import { ThemeProvider } from './context/ThemeContext';
 import MainLayout from './components/layout/MainLayout';
 import Dashboard from './pages/dashboard/Dashboard';
 import ProfileForm from './pages/profile/ProfileForm';
@@ -42,66 +43,68 @@ const ProtectedRoute = () => {
 
 const App = () => {
   return (
-    <Router>
-      <Routes>
-        {/* Public routes */}
-        <Route path="/login" element={<Login />} />
-        <Route path="/signup" element={<Signup />} />
-        <Route path="/forgot-password" element={<ForgotPassword />} />
-        <Route path="/reset-password" element={<ResetPassword />} />
-        
-        {/* Protected routes */}
-        <Route element={<ProtectedRoute />}>
-          <Route element={<MainLayout />}>
-            <Route index element={<Navigate to="/dashboard" replace />} />
-            <Route path="dashboard" element={<Dashboard />} />
-            <Route path="profile" element={<ProfileForm />} />
-            
-            {/* Skills routes */}
-            <Route path="skills" element={<SkillsForm />} />
-              {/* Education routes */}
-            <Route path="education" element={<ViewAllEducation />} />
-            <Route path="education/new" element={<EducationForm />} />
-            <Route path="education/:id/edit" element={<EducationForm editMode />} />
-            <Route path="education/:id/view" element={<EducationForm editMode readOnly />} />
-              {/* Experience routes */}
-            <Route path="experience" element={<ViewAllExperience />} />
-            <Route path="experience/new" element={<ExperienceForm />} />
-            <Route path="experience/:id/edit" element={<ExperienceForm editMode />} />
-            <Route path="experience/:id/view" element={<ExperienceForm editMode readOnly />} />
-            
-            {/* Project routes */}
-            <Route path="projects" element={<ProjectList />} />
-            <Route path="projects/new" element={<ProjectForm />} />
-            <Route path="projects/:id/edit" element={<ProjectForm editMode />} />
-            <Route path="projects/:id/view" element={<ProjectDetails />} />
-            
-            {/* Calendar route */}
-            <Route path="calendar" element={<Calendar />} />
+    <ThemeProvider>
+      <Router>
+        <Routes>
+          {/* Public routes */}
+          <Route path="/login" element={<Login />} />
+          <Route path="/signup" element={<Signup />} />
+          <Route path="/forgot-password" element={<ForgotPassword />} />
+          <Route path="/reset-password" element={<ResetPassword />} />
+          
+          {/* Protected routes */}
+          <Route element={<ProtectedRoute />}>
+            <Route element={<MainLayout />}>
+              <Route index element={<Navigate to="/dashboard" replace />} />
+              <Route path="dashboard" element={<Dashboard />} />
+              <Route path="profile" element={<ProfileForm />} />
+              
+              {/* Skills routes */}
+              <Route path="skills" element={<SkillsForm />} />
+                {/* Education routes */}
+              <Route path="education" element={<ViewAllEducation />} />
+              <Route path="education/new" element={<EducationForm />} />
+              <Route path="education/:id/edit" element={<EducationForm editMode />} />
+              <Route path="education/:id/view" element={<EducationForm editMode readOnly />} />
+                {/* Experience routes */}
+              <Route path="experience" element={<ViewAllExperience />} />
+              <Route path="experience/new" element={<ExperienceForm />} />
+              <Route path="experience/:id/edit" element={<ExperienceForm editMode />} />
+              <Route path="experience/:id/view" element={<ExperienceForm editMode readOnly />} />
+              
+              {/* Project routes */}
+              <Route path="projects" element={<ProjectList />} />
+              <Route path="projects/new" element={<ProjectForm />} />
+              <Route path="projects/:id/edit" element={<ProjectForm editMode />} />
+              <Route path="projects/:id/view" element={<ProjectDetails />} />
+              
+              {/* Calendar route */}
+              <Route path="calendar" element={<Calendar />} />
 
-            {/* Settings route */}
-            <Route path="settings" element={<Settings />} />
+              {/* Settings route */}
+              <Route path="settings" element={<Settings />} />
 
-            {/* Help route */}
-            <Route path="help" element={<Help />} />
-            
-            {/* Tasks route */}
-            <Route path="tasks" element={<Tasks />} />
-            <Route path="tasks/upcoming" element={<Tasks filter="upcoming" />} />
-            <Route path="tasks/completed" element={<Tasks filter="completed" />} />
-            <Route path="tasks/new" element={<Tasks showNewTaskForm={true} />} />
-                      
-            {/* Redirect to dashboard for any other routes */}
-            <Route path="*" element={
-              <div className="not-found">
-                <h2>404 - Page Not Found</h2>
-                <p>The page you are looking for does not exist.</p>
-              </div>
-            } />
+              {/* Help route */}
+              <Route path="help" element={<Help />} />
+              
+              {/* Tasks route */}
+              <Route path="tasks" element={<Tasks />} />
+              <Route path="tasks/upcoming" element={<Tasks filter="upcoming" />} />
+              <Route path="tasks/completed" element={<Tasks filter="completed" />} />
+              <Route path="tasks/new" element={<Tasks showNewTaskForm={true} />} />
+                        
+              {/* Redirect to dashboard for any other routes */}
+              <Route path="*" element={
+                <div className="not-found">
+                  <h2>404 - Page Not Found</h2>
+                  <p>The page you are looking for does not exist.</p>
+                </div>
+              } />
+            </Route>
           </Route>
-        </Route>
-      </Routes>
-    </Router>
+        </Routes>
+      </Router>
+    </ThemeProvider>
   );
 };
 

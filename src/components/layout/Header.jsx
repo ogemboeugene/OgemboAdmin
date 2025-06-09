@@ -14,28 +14,17 @@ import {
 } from 'react-icons/fa';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAuth } from '../../context/AuthContext';
+import { useTheme } from '../../context/ThemeContext';
 
 const Header = () => {
   const { user } = useAuth(); // Get user data from auth context
+  const { darkMode, toggleDarkMode } = useTheme(); // Get theme context
   const [searchQuery, setSearchQuery] = useState('');
   const [showNotifications, setShowNotifications] = useState(false);
   const [notifications, setNotifications] = useState([]);
-  const [darkMode, setDarkMode] = useState(false);
   const navigate = useNavigate();
-  
-  const notificationRef = useRef(null);
+    const notificationRef = useRef(null);
   const searchRef = useRef(null);
-  
-  // Check for dark mode preference
-  useEffect(() => {
-    const isDarkMode = localStorage.getItem('darkMode') === 'true';
-    setDarkMode(isDarkMode);
-    if (isDarkMode) {
-      document.body.classList.add('dark-mode');
-    } else {
-      document.body.classList.remove('dark-mode');
-    }
-  }, []);
   
   // Close notifications when clicking outside
   useEffect(() => {
@@ -101,21 +90,12 @@ const Header = () => {
   const toggleNotifications = () => {
     setShowNotifications(!showNotifications);
   };
-  
-  // Mark all notifications as read
+    // Mark all notifications as read
   const markAllAsRead = () => {
     setNotifications(notifications.map(notification => ({
       ...notification,
       read: true
     })));
-  };
-  
-  // Toggle dark mode
-  const toggleDarkMode = () => {
-    const newDarkMode = !darkMode;
-    setDarkMode(newDarkMode);
-    document.body.classList.toggle('dark-mode', newDarkMode);
-    localStorage.setItem('darkMode', newDarkMode);
   };
   
   // Handle search

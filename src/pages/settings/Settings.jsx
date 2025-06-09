@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Link } from 'react-router-dom';
+import apiService from '../../services/api/apiService';
 import { 
   FaCog, 
   FaUser, 
@@ -54,55 +55,87 @@ import {
   FaUserCircle
 } from 'react-icons/fa';
 import { useAuth } from '../../context/AuthContext';
+import { useTheme } from '../../context/ThemeContext';
 
 const Settings = () => {
   const { user } = useAuth();
+  const { darkMode, setDarkMode, primaryColor, setPrimaryColor, fontSize, setFontSize } = useTheme();
   
   // State for active tab
   const [activeTab, setActiveTab] = useState('general');
   
-  // State for theme settings
-  const [darkMode, setDarkMode] = useState(false);
-  const [primaryColor, setPrimaryColor] = useState('#2563eb');
-  const [fontSize, setFontSize] = useState('medium');
+  // State for loading
+  const [isLoading, setIsLoading] = useState(true);
+  const [dataError, setDataError] = useState(null);
   
   // State for notification settings
   const [emailNotifications, setEmailNotifications] = useState(true);
   const [pushNotifications, setPushNotifications] = useState(true);
   const [notifyOnProjectUpdate, setNotifyOnProjectUpdate] = useState(true);
   const [notifyOnMessage, setNotifyOnMessage] = useState(true);
-    // State for account settings
-  const [email, setEmail] = useState(user?.email || '');
-  const [username, setUsername] = useState(user?.username || '');
+  
+  // State for account settings
+  const [email, setEmail] = useState('');
+  const [username, setUsername] = useState('');
+  const [firstName, setFirstName] = useState('');
+  const [lastName, setLastName] = useState('');
+  const [professionalTitle, setProfessionalTitle] = useState('');
+  const [bio, setBio] = useState('');
   const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
-    // State for developer settings
-  const [githubUsername, setGithubUsername] = useState(user?.profile?.githubUsername || '');
-  const [preferredStack, setPreferredStack] = useState(['React', 'Node.js', 'MongoDB']);
+  
+  // State for developer settings
+  const [githubUsername, setGithubUsername] = useState('');
+  const [preferredStack, setPreferredStack] = useState([]);
   const [stackInput, setStackInput] = useState('');
   const [devEnvironment, setDevEnvironment] = useState('vscode');
-    // State for API settings
-  const [apiKey, setApiKey] = useState(import.meta.env.VITE_STRIPE_TEST_KEY || '');
+  const [codeSnippetTheme, setCodeSnippetTheme] = useState('monokai');
+  
+  // State for localization settings
+  const [language, setLanguage] = useState('en');
+  const [timezone, setTimezone] = useState('Africa/Nairobi');
+  const [dateFormat, setDateFormat] = useState('mdy');
+  
+  // State for API settings
+  const [apiKey, setApiKey] = useState('');
   const [showApiKey, setShowApiKey] = useState(false);
-  const [webhookUrl, setWebhookUrl] = useState('https://api.example.com/webhook');
+  const [webhookUrl, setWebhookUrl] = useState('');
+  const [webhookEvents, setWebhookEvents] = useState({
+    project: true,
+    profile: true,
+    contact: true
+  });
   
   // State for portfolio settings
   const [portfolioVisibility, setPortfolioVisibility] = useState('public');
   const [showCodeSamples, setShowCodeSamples] = useState(true);
   const [showProjectMetrics, setShowProjectMetrics] = useState(true);
   const [allowProjectComments, setAllowProjectComments] = useState(true);
+  const [defaultProjectSort, setDefaultProjectSort] = useState('newest');
+  const [projectsPerPage, setProjectsPerPage] = useState('6');
   
   // State for social profiles
-  const [githubProfile, setGithubProfile] = useState(user?.profile?.githubProfile || '');
-  const [linkedinProfile, setLinkedinProfile] = useState(user?.profile?.linkedinProfile || '');
-  const [twitterProfile, setTwitterProfile] = useState(user?.profile?.twitterProfile || '');
+  const [githubProfile, setGithubProfile] = useState('');
+  const [linkedinProfile, setLinkedinProfile] = useState('');
+  const [twitterProfile, setTwitterProfile] = useState('');
+  const [socialDisplay, setSocialDisplay] = useState('all');
   
   // State for backup & data
   const [autoBackup, setAutoBackup] = useState(true);
   const [backupFrequency, setBackupFrequency] = useState('weekly');
-  const [lastBackup, setLastBackup] = useState('2023-07-15T14:30:00');
+  const [lastBackup, setLastBackup] = useState(null);
+  const [exportFormat, setExportFormat] = useState('json');
+  
+  // State for notification timing
+  const [quietHoursFrom, setQuietHoursFrom] = useState('22:00');
+  const [quietHoursTo, setQuietHoursTo] = useState('07:00');
+  
+  // State for projects and featured projects
+  const [projects, setProjects] = useState([]);
+  const [featuredProjects, setFeaturedProjects] = useState([]);
+  const [loadingProjects, setLoadingProjects] = useState(false);
   
   // State for saving changes
   const [isSaving, setIsSaving] = useState(false);
@@ -119,46 +152,232 @@ const Settings = () => {
   const apiRef = useRef(null);
   const portfolioRef = useRef(null);
   const socialRef = useRef(null);
-  const backupRef = useRef(null);
-  
-  // Load settings from localStorage on component mount
+  const backupRef = useRef(null);  // Load settings from localStorage and fetch settings data from API
   useEffect(() => {
-    const savedSettings = localStorage.getItem('developerSettings');
-    if (savedSettings) {
+    const loadSettings = async () => {
+      setIsLoading(true);
+      setDataError(null);
+      
       try {
-        const parsedSettings = JSON.parse(savedSettings);
-        setDarkMode(parsedSettings.darkMode || false);
-        setPrimaryColor(parsedSettings.primaryColor || '#2563eb');
-        setFontSize(parsedSettings.fontSize || 'medium');
-        setEmailNotifications(parsedSettings.emailNotifications !== undefined ? parsedSettings.emailNotifications : true);
-        setPushNotifications(parsedSettings.pushNotifications !== undefined ? parsedSettings.pushNotifications : true);
-        setPortfolioVisibility(parsedSettings.portfolioVisibility || 'public');
-        setShowCodeSamples(parsedSettings.showCodeSamples !== undefined ? parsedSettings.showCodeSamples : true);
-        setShowProjectMetrics(parsedSettings.showProjectMetrics !== undefined ? parsedSettings.showProjectMetrics : true);
-        setAllowProjectComments(parsedSettings.allowProjectComments !== undefined ? parsedSettings.allowProjectComments : true);
-        
-        if (parsedSettings.preferredStack) {
-          setPreferredStack(parsedSettings.preferredStack);
+        // Fetch both profile and settings data in parallel
+        const [profileResponse, settingsResponse] = await Promise.all([
+          apiService.profile.get(),
+          apiService.settings.get()
+        ]);
+
+        console.log('Profile response:', profileResponse);
+        console.log('Settings response:', settingsResponse);        // Handle profile data
+        if (profileResponse.data && profileResponse.data.success) {
+          const responseData = profileResponse.data.data;
+          const userData = responseData.user;
+          const profileData = userData.profile;
+            // Set user information
+          setEmail(userData.email || '');
+          setFirstName(profileData.firstName || '');
+          setLastName(profileData.lastName || '');
+          
+          // Combine firstName and lastName to create username
+          const combinedUsername = `${profileData.firstName || ''} ${profileData.lastName || ''}`.trim();
+          setUsername(combinedUsername || profileData.username || '');
+          
+          setProfessionalTitle(profileData.title || profileData.currentPosition || '');
+          setBio(profileData.bio || '');          // Set social profiles from profile data
+          if (profileData.socialLinks) {
+            console.log('Social Links from API:', profileData.socialLinks);
+            setGithubProfile(profileData.socialLinks.github || '');
+            setLinkedinProfile(profileData.socialLinks.linkedin || '');
+            setTwitterProfile(profileData.socialLinks.twitter || '');
+            
+            console.log('Set GitHub Profile to:', profileData.socialLinks.github);
+            console.log('Set LinkedIn Profile to:', profileData.socialLinks.linkedin);
+            console.log('Set Twitter Profile to:', profileData.socialLinks.twitter);
+            
+            // Extract GitHub username from GitHub URL for the githubUsername field
+            if (profileData.socialLinks.github) {
+              const githubUrl = profileData.socialLinks.github;
+              const usernameMatch = githubUrl.match(/github\.com\/([^\/]+)/);
+              if (usernameMatch && usernameMatch[1]) {
+                setGithubUsername(usernameMatch[1]);
+              }
+            }
+          }
+            // Map settings from profile if available
+          if (responseData.settings) {
+            const settings = responseData.settings;
+            
+            // Notification settings
+            setEmailNotifications(settings.emailNotifications === 1);
+            setPushNotifications(settings.pushNotifications === 1);
+            setNotifyOnProjectUpdate(settings.loginNotifications === 1);
+            setNotifyOnMessage(settings.notificationsEnabled === 1);
+            
+            // Theme settings
+            if (settings.theme) {
+              setDarkMode(settings.theme === 'dark');
+            }
+            if (settings.primaryColor) {
+              setPrimaryColor(settings.primaryColor);
+            }
+            if (settings.fontSize) {
+              setFontSize(settings.fontSize);
+            }
+            
+            // Privacy settings
+            setPortfolioVisibility(settings.profilePublic === 1 ? 'public' : 'private');
+            setShowCodeSamples(settings.showEmail === 1);
+            setShowProjectMetrics(settings.showPhone === 1);
+              // Developer settings
+            if (settings.githubUsername) {
+              setGithubUsername(settings.githubUsername);
+            }
+            if (settings.developmentEnvironment) {
+              setDevEnvironment(settings.developmentEnvironment);
+            }
+            if (settings.codeSnippetTheme) {
+              setCodeSnippetTheme(settings.codeSnippetTheme);
+            }
+            if (settings.webhookUrl) {
+              setWebhookUrl(settings.webhookUrl);
+            }
+            
+            // Localization settings
+            if (settings.language) {
+              setLanguage(settings.language);
+            }
+            if (settings.timezone) {
+              setTimezone(settings.timezone);
+            }
+            if (settings.dateFormat) {
+              setDateFormat(settings.dateFormat);
+            }
+            if (settings.timeFormat) {
+              // Handle time format if needed
+            }
+            
+            // Backup settings
+            setAutoBackup(settings.autoBackup === 1);
+            if (settings.backupFrequency) {
+              setBackupFrequency(settings.backupFrequency);
+            }
+            
+            // Projects settings
+            if (settings.defaultProjectSort) {
+              setDefaultProjectSort(settings.defaultProjectSort);
+            }
+            if (settings.projectsPerPage) {
+              setProjectsPerPage(settings.projectsPerPage.toString());
+            }
+          }
+          
+          // Set preferred tech stack from skills
+          if (profileData.skills && profileData.skills.length > 0) {
+            const techStackNames = profileData.skills.map(skill => skill.name);
+            setPreferredStack(techStackNames);
+          }
+        }        // Handle settings data response (if it has different structure)
+        if (settingsResponse.data && settingsResponse.data.success) {
+          const settingsData = settingsResponse.data.data;
+          
+          // Override with any additional settings from settings endpoint
+          if (settingsData && settingsData.settings) {
+            const settings = settingsData.settings;
+            
+            // Update settings that might be different from profile endpoint
+            if (settings.notifications && settings.notifications.emailNotifications !== undefined) {
+              setEmailNotifications(settings.notifications.emailNotifications === 1);
+            }
+            if (settings.notifications && settings.notifications.pushNotifications !== undefined) {
+              setPushNotifications(settings.notifications.pushNotifications === 1);
+            }
+            if (settings.appearance && settings.appearance.theme !== undefined) {
+              setDarkMode(settings.appearance.theme === 'dark');
+            }
+            if (settings.appearance && settings.appearance.primaryColor !== undefined) {
+              setPrimaryColor(settings.appearance.primaryColor);
+            }
+            if (settings.appearance && settings.appearance.fontSize !== undefined) {
+              setFontSize(settings.appearance.fontSize);
+            }
+              // Map featured projects from settings
+            if (settings.projects && settings.projects.featured_projects) {
+              const featuredProjectsData = settings.projects.featured_projects;
+              setProjects(featuredProjectsData);
+              setFeaturedProjects(featuredProjectsData.map(p => p.id.toString()));
+            }
+            
+            // Map projects per page from settings
+            if (settings.projects && settings.projects.projects_per_page) {
+              setProjectsPerPage(settings.projects.projects_per_page.toString());
+            }
+            
+            // Map preferred tech stack from settings
+            if (settings.projects && settings.projects.preferred_tech_stack) {
+              const techStackNames = settings.projects.preferred_tech_stack.map(tech => tech.name);
+              const uniqueTechStack = [...new Set(techStackNames)]; // Remove duplicates
+              setPreferredStack(uniqueTechStack);
+            }
+            
+            // Map webhookUrl from developer settings
+            if (settings.developer && settings.developer.webhook_url) {
+              setWebhookUrl(settings.developer.webhook_url);
+            }
+          }
+        }// Load additional local settings not covered by API
+        const savedSettings = localStorage.getItem('developerSettings');
+        if (savedSettings) {
+          try {
+            const parsedSettings = JSON.parse(savedSettings);
+            
+            // Only use local settings for values not provided by API
+            if (!codeSnippetTheme) {
+              setCodeSnippetTheme(parsedSettings.codeSnippetTheme || 'vs-code');
+            }
+            if (!socialDisplay) {
+              setSocialDisplay(parsedSettings.socialDisplay || 'all');
+            }
+          } catch (error) {
+            console.error('Error parsing saved local settings:', error);
+          }
         }
         
-        if (parsedSettings.devEnvironment) {
-          setDevEnvironment(parsedSettings.devEnvironment);
-        }
       } catch (error) {
-        console.error('Error parsing saved settings:', error);
+        console.error('Error fetching settings data:', error);
+        setDataError('Failed to load settings. Some features may not work correctly.');
+        
+        // Fallback to local storage if API fails
+        const savedSettings = localStorage.getItem('developerSettings');
+        if (savedSettings) {
+          try {
+            const parsedSettings = JSON.parse(savedSettings);
+            
+            setEmailNotifications(parsedSettings.emailNotifications !== undefined ? parsedSettings.emailNotifications : true);
+            setPushNotifications(parsedSettings.pushNotifications !== undefined ? parsedSettings.pushNotifications : true);
+            setPortfolioVisibility(parsedSettings.portfolioVisibility || 'public');
+            setShowCodeSamples(parsedSettings.showCodeSamples !== undefined ? parsedSettings.showCodeSamples : true);
+            setShowProjectMetrics(parsedSettings.showProjectMetrics !== undefined ? parsedSettings.showProjectMetrics : true);
+            setAllowProjectComments(parsedSettings.allowProjectComments !== undefined ? parsedSettings.allowProjectComments : true);
+            
+            if (parsedSettings.preferredStack) {
+              setPreferredStack(parsedSettings.preferredStack);
+            }
+            if (parsedSettings.devEnvironment) {
+              setDevEnvironment(parsedSettings.devEnvironment);
+            }
+          } catch (error) {
+            console.error('Error parsing fallback settings:', error);
+          }
+        }
+      } finally {
+        setIsLoading(false);
       }
-    }
-    
-    // Check if system prefers dark mode
-    const prefersDarkMode = window.matchMedia('(prefers-color-scheme: dark)').matches;
-    if (prefersDarkMode && savedSettings === null) {
-      setDarkMode(true);
-    }
-  }, []);
-  
-  // Save settings to localStorage when they change
+    };
+
+    loadSettings();
+  }, [setDarkMode, setPrimaryColor, setFontSize]);
+    // Save settings to localStorage when they change
   useEffect(() => {
     const settings = {
+      // Theme settings are now handled by ThemeContext, but we still store them here for consistency
       darkMode,
       primaryColor,
       fontSize,
@@ -175,22 +394,6 @@ const Settings = () => {
     };
     
     localStorage.setItem('developerSettings', JSON.stringify(settings));
-    
-    // Apply dark mode to body
-    if (darkMode) {
-      document.body.classList.add('dark-mode');
-    } else {
-      document.body.classList.remove('dark-mode');
-    }
-    
-    // Apply primary color as CSS variable
-    document.documentElement.style.setProperty('--primary-color', primaryColor);
-    
-    // Apply font size
-    let rootFontSize = '16px';
-    if (fontSize === 'small') rootFontSize = '14px';
-    if (fontSize === 'large') rootFontSize = '18px';
-    document.documentElement.style.fontSize = rootFontSize;
     
   }, [
     darkMode, 
@@ -238,12 +441,17 @@ const Settings = () => {
       setStackInput('');
     }
   };
-  
-  // Remove tech stack item
+    // Remove tech stack item
   const removeStackItem = (item) => {
     setPreferredStack(preferredStack.filter(tech => tech !== item));
   };
-  
+
+  // Handle featured projects selection change
+  const handleFeaturedProjectsChange = (e) => {
+    const selectedOptions = Array.from(e.target.selectedOptions);
+    const selectedValues = selectedOptions.map(option => option.value);
+    setFeaturedProjects(selectedValues);
+  };
   // Handle form submission
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -252,9 +460,6 @@ const Settings = () => {
     setSaveError(null);
     
     try {
-      // Simulate API call
-      await new Promise(resolve => setTimeout(resolve, 1000));
-      
       // Validate password if changing
       if (newPassword) {
         if (newPassword !== confirmPassword) {
@@ -263,7 +468,95 @@ const Settings = () => {
         if (newPassword.length < 8) {
           throw new Error('Password must be at least 8 characters');
         }
+        if (!currentPassword) {
+          throw new Error('Current password is required to change password');
+        }
       }
+
+      // Prepare profile data
+      const profileData = {
+        first_name: firstName,
+        last_name: lastName,
+        current_position: professionalTitle,
+        bio: bio,
+        social_links: {
+          github: githubProfile,
+          linkedin: linkedinProfile,
+          twitter: twitterProfile
+        },
+        skills: preferredStack.map(tech => ({ name: tech }))
+      };
+
+      // Prepare settings data
+      const settingsData = {
+        appearance: {
+          theme: darkMode ? 'dark' : 'light',
+          primary_color: primaryColor,
+          font_size: fontSize
+        },
+        notifications: {
+          email_notifications: emailNotifications,
+          push_notifications: pushNotifications,
+          project_updates: notifyOnProjectUpdate,
+          messages: notifyOnMessage,
+          quiet_hours: {
+            from: quietHoursFrom,
+            to: quietHoursTo
+          }
+        },
+        privacy: {
+          portfolio_visibility: portfolioVisibility,
+          show_code_samples: showCodeSamples,
+          show_project_metrics: showProjectMetrics,
+          allow_project_comments: allowProjectComments,
+          social_display: socialDisplay
+        },
+        security: {
+          // Only include API key if it's been modified or generated
+          ...(apiKey && apiKey !== import.meta.env.VITE_STRIPE_TEST_KEY && { api_key: apiKey })
+        },
+        localization: {
+          language: language,
+          timezone: timezone,
+          date_format: dateFormat
+        },
+        backup: {
+          auto_backup: autoBackup,
+          frequency: backupFrequency
+        },
+        developer: {
+          github_username: githubUsername,
+          development_environment: devEnvironment,
+          webhook_url: webhookUrl,
+          code_snippet_theme: codeSnippetTheme,
+          preferred_tech_stack: preferredStack.map(tech => ({ name: tech }))
+        },
+        projects: {
+          featured_projects: featuredProjects.map(id => parseInt(id)),
+          default_sort: defaultProjectSort,
+          projects_per_page: parseInt(projectsPerPage),
+          webhook_events: webhookEvents
+        }
+      };
+
+      // Update profile and settings
+      const updatePromises = [
+        apiService.profile.update(profileData),
+        apiService.settings.update(settingsData)
+      ];
+
+      // If password is being changed, include that in the update
+      if (newPassword) {
+        const passwordData = {
+          current_password: currentPassword,
+          new_password: newPassword,
+          confirm_password: confirmPassword
+        };
+        updatePromises.push(apiService.profile.updatePassword(passwordData));
+      }
+
+      // Execute all updates
+      await Promise.all(updatePromises);
       
       // Success
       setSaveSuccess(true);
@@ -273,12 +566,37 @@ const Settings = () => {
       setNewPassword('');
       setConfirmPassword('');
       
+      // Update local storage with latest settings
+      const localSettings = {
+        darkMode,
+        primaryColor,
+        fontSize,
+        emailNotifications,
+        pushNotifications,
+        notifyOnProjectUpdate,
+        notifyOnMessage,
+        portfolioVisibility,
+        showCodeSamples,
+        showProjectMetrics,
+        allowProjectComments,
+        preferredStack,
+        devEnvironment,
+        codeSnippetTheme,
+        socialDisplay,
+        language,
+        timezone,
+        dateFormat
+      };
+      localStorage.setItem('developerSettings', JSON.stringify(localSettings));
+      
       // Clear success message after 3 seconds
       setTimeout(() => {
         setSaveSuccess(false);
       }, 3000);
+      
     } catch (error) {
-      setSaveError(error.message || 'An error occurred while saving settings');
+      console.error('Error saving settings:', error);
+      setSaveError(error.response?.data?.message || error.message || 'An error occurred while saving settings');
       
       // Clear error message after 5 seconds
       setTimeout(() => {
@@ -288,27 +606,106 @@ const Settings = () => {
       setIsSaving(false);
     }
   };
-  
-  // Generate a new API key
-  const generateNewApiKey = () => {
-    // In a real app, this would call an API to generate a new key
-    const characters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
-    let result = 'sk_test_';
-    for (let i = 0; i < 24; i++) {
-      result += characters.charAt(Math.floor(Math.random() * characters.length));
+    // Generate a new API key
+  const generateNewApiKey = async () => {
+    try {
+      setIsSaving(true);
+      
+      // Call API to generate new key (if endpoint exists)
+      // For now, generate a mock key and save it
+      const characters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+      let result = 'sk_live_';
+      for (let i = 0; i < 32; i++) {
+        result += characters.charAt(Math.floor(Math.random() * characters.length));
+      }
+      
+      setApiKey(result);
+      
+      // Save the new API key to settings
+      const settingsData = {
+        security: {
+          api_key: result
+        }
+      };
+      
+      await apiService.settings.update(settingsData);
+      
+      setSaveSuccess(true);
+      setTimeout(() => setSaveSuccess(false), 3000);
+      
+    } catch (error) {
+      console.error('Error generating API key:', error);
+      setSaveError('Failed to generate new API key');
+      setTimeout(() => setSaveError(null), 5000);
+    } finally {
+      setIsSaving(false);
     }
-    setApiKey(result);
   };
-  
-  // Handle backup now
+    // Handle backup now
   const handleBackupNow = async () => {
     try {
-      // Simulate backup process
-      await new Promise(resolve => setTimeout(resolve, 2000));
-      setLastBackup(new Date().toISOString());
-      alert('Backup completed successfully!');
+      setIsSaving(true);
+      
+      // Call backup API endpoint
+      await apiService.settings.backup();
+      
+      // Update last backup time
+      const now = new Date().toISOString();
+      setLastBackup(now);
+      
+      // Update settings with new backup time
+      const settingsData = {
+        backup: {
+          auto_backup: autoBackup,
+          frequency: backupFrequency,
+          last_backup: now
+        }
+      };
+      
+      await apiService.settings.update(settingsData);
+      
+      setSaveSuccess(true);
+      setTimeout(() => setSaveSuccess(false), 3000);
+      
     } catch (error) {
-      alert('Backup failed: ' + error.message);
+      console.error('Backup failed:', error);
+      setSaveError('Backup failed: ' + (error.response?.data?.message || error.message));
+      setTimeout(() => setSaveError(null), 5000);
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  // Handle data export
+  const handleExportData = async () => {
+    try {
+      setIsSaving(true);
+      
+      // Call export API endpoint
+      const response = await apiService.settings.export(exportFormat);
+      
+      // Create download link
+      const blob = new Blob([JSON.stringify(response.data, null, 2)], {
+        type: exportFormat === 'json' ? 'application/json' : 'text/csv'
+      });
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `portfolio-data.${exportFormat}`;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+      
+      setSaveSuccess(true);
+      setTimeout(() => setSaveSuccess(false), 3000);
+      
+    } catch (error) {
+      console.error('Export failed:', error);
+      setSaveError('Export failed: ' + (error.response?.data?.message || error.message));
+      setTimeout(() => setSaveError(null), 5000);
+    } finally {
+      setIsSaving(false);
     }
   };
   
@@ -317,10 +714,27 @@ const Settings = () => {
     const date = new Date(dateString);
     return date.toLocaleDateString() + ' ' + date.toLocaleTimeString();
   };
-  
-  return (
+    return (
     <div className="settings-container">
-      <div className="settings-header">
+      {/* Data Error Display */}
+      {dataError && (
+        <div className="data-error-banner">
+          <FaExclamationTriangle className="error-icon" />
+          <span>{dataError}</span>
+        </div>
+      )}
+      
+      {/* Loading State */}
+      {isLoading ? (
+        <div className="settings-loading">
+          <div className="loading-spinner">
+            <FaSync className="spinner-icon" />
+          </div>
+          <p>Loading your settings...</p>
+        </div>
+      ) : (
+        <>
+          <div className="settings-header">
         <div className="header-left">
           <Link to="/dashboard" className="back-link">
             <FaArrowLeft /> Back to Dashboard
@@ -482,11 +896,10 @@ const Settings = () => {
                   </div>
                   <p className="form-help">Control who can view your portfolio website</p>
                 </div>
-                
-                <div className="form-group">
+                  <div className="form-group">
                   <label>Language</label>
                   <div className="select-wrapper">
-                    <select defaultValue="en">
+                    <select value={language} onChange={(e) => setLanguage(e.target.value)}>
                       <option value="en">English</option>
                       <option value="fr">French</option>
                       <option value="es">Spanish</option>
@@ -500,7 +913,7 @@ const Settings = () => {
                 <div className="form-group">
                   <label>Time Zone</label>
                   <div className="select-wrapper">
-                    <select defaultValue="Africa/Nairobi">
+                    <select value={timezone} onChange={(e) => setTimezone(e.target.value)}>
                       <option value="Africa/Nairobi">East Africa Time (UTC+3)</option>
                       <option value="Europe/London">Greenwich Mean Time (UTC+0)</option>
                       <option value="America/New_York">Eastern Time (UTC-5)</option>
@@ -520,7 +933,8 @@ const Settings = () => {
                         id="date-mdy" 
                         name="date-format" 
                         value="mdy"
-                        defaultChecked
+                        checked={dateFormat === 'mdy'}
+                        onChange={() => setDateFormat('mdy')}
                       />
                       <label htmlFor="date-mdy">MM/DD/YYYY</label>
                     </div>
@@ -530,6 +944,8 @@ const Settings = () => {
                         id="date-dmy" 
                         name="date-format" 
                         value="dmy"
+                        checked={dateFormat === 'dmy'}
+                        onChange={() => setDateFormat('dmy')}
                       />
                       <label htmlFor="date-dmy">DD/MM/YYYY</label>
                     </div>
@@ -539,6 +955,8 @@ const Settings = () => {
                         id="date-ymd" 
                         name="date-format" 
                         value="ymd"
+                        checked={dateFormat === 'ymd'}
+                        onChange={() => setDateFormat('ymd')}
                       />
                       <label htmlFor="date-ymd">YYYY/MM/DD</label>
                     </div>
@@ -724,11 +1142,10 @@ const Settings = () => {
                     </div>
                   </div>
                 </div>
-                
-                <div className="form-group">
+                  <div className="form-group">
                   <label>Default Project Sort</label>
                   <div className="select-wrapper">
-                    <select defaultValue="newest">
+                    <select value={defaultProjectSort} onChange={(e) => setDefaultProjectSort(e.target.value)}>
                       <option value="newest">Newest First</option>
                       <option value="oldest">Oldest First</option>
                       <option value="alphabetical">Alphabetical</option>
@@ -738,31 +1155,69 @@ const Settings = () => {
                   </div>
                   <p className="form-help">Choose how projects are sorted by default on your portfolio</p>
                 </div>
-                
-                <div className="form-group">
+                  <div className="form-group">
                   <label>Projects Per Page</label>
                   <div className="select-wrapper">
-                    <select defaultValue="6">
-                      <option value="3">3</option>
-                      <option value="6">6</option>
-                      <option value="9">9</option>
-                      <option value="12">12</option>
-                      <option value="all">Show All</option>
+                    <select value={projectsPerPage} onChange={(e) => setProjectsPerPage(e.target.value)}>
+                      {(() => {
+                        const defaultOptions = ['3', '6', '9', '12', 'all'];
+                        const currentValue = projectsPerPage.toString();
+                        
+                        // If current value is not in default options and is a number, add it
+                        if (!defaultOptions.includes(currentValue) && !isNaN(currentValue) && currentValue !== 'all') {
+                          const numericOptions = defaultOptions.filter(opt => opt !== 'all').map(Number);
+                          numericOptions.push(Number(currentValue));
+                          numericOptions.sort((a, b) => a - b);
+                          
+                          return [
+                            ...numericOptions.map(num => <option key={num} value={num.toString()}>{num}</option>),
+                            <option key="all" value="all">Show All</option>
+                          ];
+                        }
+                        
+                        // Return default options
+                        return [
+                          <option key="3" value="3">3</option>,
+                          <option key="6" value="6">6</option>,
+                          <option key="9" value="9">9</option>,
+                          <option key="12" value="12">12</option>,
+                          <option key="all" value="all">Show All</option>
+                        ];
+                      })()}
                     </select>
                   </div>
                 </div>
-                
-                <div className="form-group">
+                  <div className="form-group">
                   <label>Featured Projects</label>
                   <div className="select-wrapper">
-                    <select multiple defaultValue={['1', '2']}>
-                      <option value="1">MamaPesa</option>
-                      <option value="2">ShopOkoa</option>
-                      <option value="3">SokoBeauty</option>
-                      <option value="4">DevPortal</option>
-                    </select>
-                  </div>
-                  <p className="form-help">Select projects to feature prominently on your portfolio (Ctrl+click to select multiple)</p>
+                    {loadingProjects ? (
+                      <div className="loading-state">
+                        <span>Loading projects...</span>
+                      </div>
+                    ) : (
+                      <select 
+                        multiple 
+                        value={featuredProjects}
+                        onChange={handleFeaturedProjectsChange}
+                        disabled={projects.length === 0}
+                      >
+                        {projects.length > 0 ? (
+                          projects.map((project) => (
+                            <option key={project.id} value={project.id.toString()}>
+                              {project.title}
+                            </option>
+                          ))
+                        ) : (
+                          <option value="" disabled>No projects available</option>
+                        )}
+                      </select>
+                    )}
+                  </div>                  <p className="form-help">
+                    These are your currently featured projects. You can unselect projects to remove them from your featured list (Ctrl+click to deselect).
+                    {projects.length === 0 && !loadingProjects && (
+                      <span className="error-text"> - No featured projects found. Go to Projects page to mark some projects as featured.</span>
+                    )}
+                  </p>
                 </div>
               </div>
             </section>
@@ -855,11 +1310,10 @@ const Settings = () => {
                     </div>
                   </div>
                 </div>
-                
-                <div className="form-group">
+                  <div className="form-group">
                   <label>Code Snippet Theme</label>
                   <div className="select-wrapper">
-                    <select defaultValue="monokai">
+                    <select value={codeSnippetTheme} onChange={(e) => setCodeSnippetTheme(e.target.value)}>
                       <option value="monokai">Monokai</option>
                       <option value="github">GitHub</option>
                       <option value="dracula">Dracula</option>
@@ -949,17 +1403,24 @@ const Settings = () => {
                     </div>
                   </div>
                 </div>
-                
-                <div className="form-group">
+                  <div className="form-group">
                   <label>Quiet Hours</label>
                   <div className="time-range">
                     <div className="time-input">
                       <label>From</label>
-                      <input type="time" defaultValue="22:00" />
+                      <input 
+                        type="time" 
+                        value={quietHoursFrom} 
+                        onChange={(e) => setQuietHoursFrom(e.target.value)} 
+                      />
                     </div>
                     <div className="time-input">
                       <label>To</label>
-                      <input type="time" defaultValue="07:00" />
+                      <input 
+                        type="time" 
+                        value={quietHoursTo} 
+                        onChange={(e) => setQuietHoursTo(e.target.value)} 
+                      />
                     </div>
                   </div>
                   <p className="form-help">No notifications will be sent during these hours</p>
@@ -985,10 +1446,9 @@ const Settings = () => {
                     <FaCamera />
                   </div>
                 </div>
-                
-                <div className="profile-info">
-                  <h3>{user?.profile?.firstName} {user?.profile?.lastName}</h3>
-                  <p>{user?.profile?.title || user?.profile?.currentPosition || 'Full Stack Developer'}</p>
+                  <div className="profile-info">
+                  <h3>{firstName} {lastName}</h3>
+                  <p>{professionalTitle || 'Full Stack Developer'}</p>
                   
                   <div className="account-type">
                     <span className="account-badge">{user?.role || 'Admin'}</span>
@@ -1019,17 +1479,23 @@ const Settings = () => {
                   />
                   <p className="form-help">This will be used for your portfolio URL: example.com/{username}</p>
                 </div>
-                
-                <div className="form-group">
+                  <div className="form-group">
                   <label>Professional Title</label>
-                  <input type="text" defaultValue="Full Stack Developer" />
+                  <input 
+                    type="text" 
+                    value={professionalTitle} 
+                    onChange={(e) => setProfessionalTitle(e.target.value)} 
+                    placeholder="e.g., Full Stack Developer"
+                  />
                 </div>
                 
                 <div className="form-group">
                   <label>Bio</label>
                   <textarea 
                     rows="4" 
-                    defaultValue="Experienced software developer specializing in web and mobile applications. Passionate about creating elegant solutions to complex problems."
+                    value={bio}
+                    onChange={(e) => setBio(e.target.value)}
+                    placeholder="Brief description for your portfolio homepage"
                   ></textarea>
                   <p className="form-help">Brief description for your portfolio homepage</p>
                 </div>
@@ -1268,20 +1734,34 @@ const Settings = () => {
                   />
                   <p className="form-help">URL to receive notifications when your portfolio data changes</p>
                 </div>
-                
-                <div className="form-group">
+                  <div className="form-group">
                   <label>Webhook Events</label>
                   <div className="checkbox-group">
                     <div className="checkbox-item">
-                      <input type="checkbox" id="event-project" defaultChecked />
+                      <input 
+                        type="checkbox" 
+                        id="event-project" 
+                        checked={webhookEvents.project}
+                        onChange={(e) => setWebhookEvents({...webhookEvents, project: e.target.checked})}
+                      />
                       <label htmlFor="event-project">Project updates</label>
                     </div>
                     <div className="checkbox-item">
-                      <input type="checkbox" id="event-profile" defaultChecked />
+                      <input 
+                        type="checkbox" 
+                        id="event-profile" 
+                        checked={webhookEvents.profile}
+                        onChange={(e) => setWebhookEvents({...webhookEvents, profile: e.target.checked})}
+                      />
                       <label htmlFor="event-profile">Profile changes</label>
                     </div>
                     <div className="checkbox-item">
-                      <input type="checkbox" id="event-contact" defaultChecked />
+                      <input 
+                        type="checkbox" 
+                        id="event-contact" 
+                        checked={webhookEvents.contact}
+                        onChange={(e) => setWebhookEvents({...webhookEvents, contact: e.target.checked})}
+                      />
                       <label htmlFor="event-contact">Contact form submissions</label>
                     </div>
                   </div>
@@ -1303,53 +1783,55 @@ const Settings = () => {
                 <p>Connect your social media accounts</p>
               </div>
               
-              <div className="settings-card">
-                <div className="form-group">
+              <div className="settings-card">                <div className="form-group">
                   <label className="social-label">
                     <FaGithub className="social-icon github" />
                     GitHub
                   </label>
                   <div className="social-input">
-                    <span className="input-prefix">github.com/</span>
                     <input 
                       type="text" 
-                      value={githubProfile.replace('github.com/', '')} 
-                      onChange={(e) => setGithubProfile(`github.com/${e.target.value}`)} 
+                      value={githubProfile || ''} 
+                      onChange={(e) => {
+                        setGithubProfile(e.target.value);
+                      }}
+                      placeholder="https://github.com/username"
                     />
                   </div>
                 </div>
-                
-                <div className="form-group">
+                  <div className="form-group">
                   <label className="social-label">
                     <FaLinkedin className="social-icon linkedin" />
                     LinkedIn
                   </label>
                   <div className="social-input">
-                    <span className="input-prefix">linkedin.com/in/</span>
                     <input 
                       type="text" 
-                      value={linkedinProfile.replace('linkedin.com/in/', '')} 
-                      onChange={(e) => setLinkedinProfile(`linkedin.com/in/${e.target.value}`)} 
+                      value={linkedinProfile || ''} 
+                      onChange={(e) => {
+                        setLinkedinProfile(e.target.value);
+                      }}
+                      placeholder="https://linkedin.com/in/username"
                     />
                   </div>
                 </div>
-                
-                <div className="form-group">
+                  <div className="form-group">
                   <label className="social-label">
                     <FaTwitter className="social-icon twitter" />
                     Twitter
                   </label>
                   <div className="social-input">
-                    <span className="input-prefix">twitter.com/</span>
                     <input 
                       type="text" 
-                      value={twitterProfile.replace('twitter.com/', '')} 
-                      onChange={(e) => setTwitterProfile(`twitter.com/${e.target.value}`)} 
+                      value={twitterProfile || ''} 
+                      onChange={(e) => {
+                        setTwitterProfile(e.target.value);
+                      }}
+                      placeholder="https://twitter.com/username"
                     />
                   </div>
                 </div>
-                
-                <div className="form-group">
+                  <div className="form-group">
                   <label>Display Social Icons</label>
                   <div className="toggle-group">
                     <div className="toggle-option">
@@ -1358,7 +1840,8 @@ const Settings = () => {
                         id="social-all" 
                         name="social-display" 
                         value="all"
-                        defaultChecked
+                        checked={socialDisplay === 'all'}
+                        onChange={() => setSocialDisplay('all')}
                       />
                       <label htmlFor="social-all">All Pages</label>
                     </div>
@@ -1368,6 +1851,8 @@ const Settings = () => {
                         id="social-home" 
                         name="social-display" 
                         value="home"
+                        checked={socialDisplay === 'home'}
+                        onChange={() => setSocialDisplay('home')}
                       />
                       <label htmlFor="social-home">Home Page Only</label>
                     </div>
@@ -1377,6 +1862,8 @@ const Settings = () => {
                         id="social-contact" 
                         name="social-display" 
                         value="contact"
+                        checked={socialDisplay === 'contact'}
+                        onChange={() => setSocialDisplay('contact')}
                       />
                       <label htmlFor="social-contact">Contact Page Only</label>
                     </div>
@@ -1386,6 +1873,8 @@ const Settings = () => {
                         id="social-none" 
                         name="social-display" 
                         value="none"
+                        checked={socialDisplay === 'none'}
+                        onChange={() => setSocialDisplay('none')}
                       />
                       <label htmlFor="social-none">Hide All</label>
                     </div>
@@ -1449,21 +1938,20 @@ const Settings = () => {
                     </button>
                   </div>
                 </div>
-                
-                <div className="form-group">
+                  <div className="form-group">
                   <label>Export Data</label>
                   <div className="export-options">
                     <div className="export-format">
                       <label>Format:</label>
                       <div className="select-wrapper">
-                        <select defaultValue="json">
+                        <select value={exportFormat} onChange={(e) => setExportFormat(e.target.value)}>
                           <option value="json">JSON</option>
                           <option value="csv">CSV</option>
                           <option value="xml">XML</option>
                         </select>
                       </div>
                     </div>
-                    <button type="button" className="btn-secondary">
+                    <button type="button" className="btn-secondary" onClick={handleExportData}>
                       <FaCloudDownloadAlt /> Export
                     </button>
                   </div>
@@ -1530,7 +2018,7 @@ const Settings = () => {
         )}
       </AnimatePresence>
       
-      <style jsx>{`
+      <style>{`
         /* Settings Container */
         .settings-container {
           padding: var(--spacing-xl);
@@ -2356,22 +2844,18 @@ const Settings = () => {
         .social-icon.twitter {
           color: #1da1f2;
         }
-        
-        .social-input {
+          .social-input {
           position: relative;
         }
         
-        .input-prefix {
-          position: absolute;
-          left: var(--spacing-md);
-          top: 50%;
-          transform: translateY(-50%);
-          color: var(--gray-500);
-          font-size: var(--text-sm);
+        .social-input input {
+          width: 100%;
+          padding: var(--spacing-md);
         }
         
-        .social-input input {
-          padding-left: calc(var(--spacing-md) + 100px);
+        .social-input input::placeholder {
+          color: var(--gray-400);
+          opacity: 1;
         }
         
         /* Backup Info */
@@ -2409,9 +2893,22 @@ const Settings = () => {
         .export-format label {
           margin-bottom: 0;
         }
-        
-        .export-format .select-wrapper {
+          .export-format .select-wrapper {
           width: 120px;
+        }
+        
+        /* Loading State */
+        .loading-state {
+          padding: var(--spacing-md);
+          text-align: center;
+          color: var(--gray-500);
+          font-style: italic;
+        }
+        
+        /* Error Text */
+        .error-text {
+          color: var(--danger-color);
+          font-weight: 500;
         }
         
         /* Data Management Actions */
@@ -2708,9 +3205,10 @@ const Settings = () => {
           
           .api-key-actions button {
             width: 100%;
-          }
-        }
+          }        }
       `}</style>
+      </>
+      )}
     </div>
   );
 };

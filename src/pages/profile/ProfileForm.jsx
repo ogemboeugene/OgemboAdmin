@@ -124,22 +124,6 @@ const ProfileForm = () => {
     localStorage.setItem('profileFormActiveTab', activeTab);
   }, [activeTab]);
 
-  // Restore scroll position after reload
-  useEffect(() => {
-    const savedScrollPosition = localStorage.getItem('profileFormScrollPosition');
-    if (savedScrollPosition) {
-      setTimeout(() => {
-        window.scrollTo(0, parseInt(savedScrollPosition));
-        localStorage.removeItem('profileFormScrollPosition');
-      }, 100);
-    }
-  }, []);
-
-  // Save scroll position before reload
-  const saveScrollPosition = () => {
-    localStorage.setItem('profileFormScrollPosition', window.scrollY.toString());
-  };
-
   const [isSaving, setIsSaving] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
@@ -149,7 +133,6 @@ const ProfileForm = () => {
   const [showLocationDetails, setShowLocationDetails] = useState(false);  const [errors, setErrors] = useState({});
   const [successMessage, setSuccessMessage] = useState('');  const [showSuccessMessage, setShowSuccessMessage] = useState(false);
   const [isDirty, setIsDirty] = useState(false);
-  const [isReloading, setIsReloading] = useState(false);
   
   // Resume management state
   const [resumes, setResumes] = useState([]);
@@ -979,22 +962,57 @@ const ProfileForm = () => {
         currentCompany: formData.currentCompany,
         yearsOfExperience: formData.yearsOfExperience || 0,
         hourlyRate: formData.hourlyRate,
-        currency: formData.currency || 'USD',
-          // Social links as JSON string (backend expects string, not object)
-        socialLinks: JSON.stringify({
-          website: formData.website,
-          github: formData.github,
-          linkedin: formData.linkedin,
-          twitter: formData.twitter,
-          facebook: formData.facebook,
-          instagram: formData.instagram,
-          dribbble: formData.dribbble,
-          behance: formData.behance,
-          medium: formData.medium,
-          youtube: formData.youtube,
-          stackoverflow: formData.stackoverflow,
-          codepen: formData.codepen
-        }),
+        currency: formData.currency || 'USD',        // Social links as object (backend stores and returns as object)
+        // Only include non-empty social links
+        socialLinks: (() => {
+          console.log('🔍 PROCESSING SOCIAL LINKS:');
+          console.log('Original formData values:', {
+            website: formData.website,
+            github: formData.github,
+            linkedin: formData.linkedin,
+            twitter: formData.twitter,
+            facebook: formData.facebook,
+            instagram: formData.instagram,
+            dribbble: formData.dribbble,
+            behance: formData.behance,
+            medium: formData.medium,
+            youtube: formData.youtube,
+            stackoverflow: formData.stackoverflow,
+            codepen: formData.codepen
+          });
+          
+          const socialLinksObj = {
+            website: formData.website || '',
+            github: formData.github || '',
+            linkedin: formData.linkedin || '',
+            twitter: formData.twitter || '',
+            facebook: formData.facebook || '',
+            instagram: formData.instagram || '',
+            dribbble: formData.dribbble || '',
+            behance: formData.behance || '',
+            medium: formData.medium || '',
+            youtube: formData.youtube || '',
+            stackoverflow: formData.stackoverflow || '',
+            codepen: formData.codepen || ''
+          };
+          
+          console.log('Social links object before filtering:', socialLinksObj);
+          
+          // Remove empty values
+          const filteredSocialLinks = Object.fromEntries(
+            Object.entries(socialLinksObj).filter(([key, value]) => value && value.trim() !== '')
+          );
+          
+          console.log('Filtered social links:', filteredSocialLinks);
+          console.log('Number of filtered social links:', Object.keys(filteredSocialLinks).length);
+          
+          // Return object directly (not JSON string) - backend expects object
+          const result = Object.keys(filteredSocialLinks).length > 0 ? filteredSocialLinks : null;
+          console.log('Final socialLinks result:', result);
+          console.log('Type of socialLinks result:', typeof result);
+          
+          return result;
+        })(),
         
         // Skills and Languages with proper structure
         skills: processSkillsForAPI(formData.skills),
@@ -1031,13 +1049,28 @@ const ProfileForm = () => {
           allowSearchEngineIndexing: formData.allowSearchEngineIndexing ? 1 : 0,
           twoFactorEnabled: formData.twoFactorEnabled ? 1 : 0
         }
-      };      
-      // Clean up empty values to keep payload clean
+      };      // Clean up empty values to keep payload clean
       Object.keys(apiData).forEach(key => {
-        if (apiData[key] === null || apiData[key] === '' || 
+        if (key === 'socialLinks') {
+          console.log(`🔍 Cleanup check for socialLinks: value = ${apiData[key]}, type = ${typeof apiData[key]}, isNull = ${apiData[key] === null}`);
+          if (apiData[key] === null) {
+            console.log('🗑️ Removing socialLinks because it is null');
+            delete apiData[key];
+          } else {
+            console.log('✅ Keeping socialLinks because it has a value');
+          }
+        } else if (apiData[key] === null || apiData[key] === '' || 
             (Array.isArray(apiData[key]) && apiData[key].length === 0)) {
+          console.log(`🗑️ Removing ${key} because it's empty/null/empty array`);
           delete apiData[key];
         }
+      });
+      
+      // 🚨 LOG WHAT'S ACTUALLY BEING SENT AFTER CLEANUP
+      console.log('🚨 FINAL PAYLOAD AFTER CLEANUP:', {
+        socialLinksInPayload: apiData.socialLinks,
+        socialLinksExists: 'socialLinks' in apiData,
+        completePayload: apiData
       });
       
       // Debug the comprehensive data being submitted
@@ -1063,37 +1096,90 @@ const ProfileForm = () => {
         country: apiData.country,
         zipCode: apiData.zipCode
       });
-      console.log('Skills:', apiData.skills);
-      console.log('Languages:', apiData.languages);
+      console.log('Skills:', apiData.skills);      console.log('Languages:', apiData.languages);
+      console.log('Social Links:', {
+        raw: {
+          website: formData.website,
+          github: formData.github,
+          linkedin: formData.linkedin,
+          twitter: formData.twitter,
+          facebook: formData.facebook,
+          instagram: formData.instagram,
+          dribbble: formData.dribbble,
+          behance: formData.behance,
+          medium: formData.medium,
+          youtube: formData.youtube,
+          stackoverflow: formData.stackoverflow,
+          codepen: formData.codepen
+        },
+        processed: apiData.socialLinks
+      });
       console.log('Work Preferences:', {
         availability: apiData.availability,
         jobTypes: apiData.jobTypes,
         remoteWorkAvailable: apiData.remoteWorkAvailable,
         openToRelocation: apiData.openToRelocation,
         profileVisibility: apiData.profileVisibility
-      });
-      console.log('Settings:', apiData.settings);
+      });      console.log('Settings:', apiData.settings);
       console.log('Complete API Data:', apiData);
+      
+      // 🚀 LOG THE EXACT REQUEST BEING SENT TO BACKEND
+      console.log('🚀 FINAL REQUEST TO BACKEND:', {
+        url: '/profile',
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${localStorage.getItem('token')}`
+        },
+        body: JSON.stringify(apiData, null, 2)
+      });
+        // 🔍 SPECIFIC SOCIAL LINKS DEBUG
+      console.log('🔍 SOCIAL LINKS DETAILED DEBUG:');
+      console.log('Raw form data social links:', {
+        website: formData.website,
+        github: formData.github,
+        linkedin: formData.linkedin,
+        twitter: formData.twitter,
+        facebook: formData.facebook,
+        instagram: formData.instagram,
+        dribbble: formData.dribbble,
+        behance: formData.behance,
+        medium: formData.medium,
+        youtube: formData.youtube,
+        stackoverflow: formData.stackoverflow,
+        codepen: formData.codepen
+      });
+      console.log('Processed socialLinks in API data:', apiData.socialLinks);
+      console.log('Type of socialLinks:', typeof apiData.socialLinks);
+      console.log('Is socialLinks null?', apiData.socialLinks === null);
+      console.log('Is socialLinks undefined?', apiData.socialLinks === undefined);
+      console.log('socialLinks length (if string):', apiData.socialLinks?.length);
+      
+      // 🌐 LOG THE ACTUAL HTTP REQUEST PAYLOAD
+      console.log('🌐 ACTUAL HTTP REQUEST PAYLOAD:');
+      console.log('Request Method: PUT');
+      console.log('Request URL: /profile');
+      console.log('Request Headers:', {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${localStorage.getItem('token')?.substring(0, 20)}...`
+      });
+      console.log('Request Body (stringified):', JSON.stringify(apiData));
+      console.log('Request Body (parsed):', apiData);
       
       // Call API to update profile
       const response = await apiService.profile.update(apiData);
-      
-      if (response.data && response.data.success) {
-        console.log('✅ Profile updated successfully:', response.data);        // Success
-        setSuccessMessage('Profile updated successfully! Refreshing page to show latest data...');
+        if (response.data && response.data.success) {
+        console.log('✅ Profile updated successfully:', response.data);
+        
+        // Success - update state without reloading
+        setSuccessMessage('Profile updated successfully!');
         setShowSuccessMessage(true);
         setIsDirty(false);
-          // Save current tab and scroll position before reload
-        localStorage.setItem('profileFormActiveTab', activeTab);
-        saveScrollPosition();
         
-        // Set reloading state and hide success message and reload page after a short delay to preserve section state
+        // Hide success message after 5 seconds
         setTimeout(() => {
-          setIsReloading(true);
           setShowSuccessMessage(false);
-          // Reload the page to refresh data while preserving the active tab
-          window.location.reload();
-        }, 2000);
+        }, 5000);
       } else {
         throw new Error(response.data?.message || 'Failed to update profile');
       }
@@ -2148,14 +2234,9 @@ const ProfileForm = () => {
           </button>          <button 
             type="submit" 
             className="save-btn" 
-            disabled={isSaving || isReloading || !isDirty}
+            disabled={isSaving || !isDirty}
           >
-            {isReloading ? (
-              <>
-                <div className="button-spinner"></div>
-                Reloading...
-              </>
-            ) : isSaving ? (
+            {isSaving ? (
               <>
                 <div className="button-spinner"></div>
                 Saving...
@@ -2734,14 +2815,14 @@ const ProfileForm = () => {
           color: var(--danger-color);
         }
         
-        input[type="text"],
-        input[type="email"],
-        input[type="tel"],
-        input[type="url"],
-        input[type="date"],
-        input[type="number"],
-        select,
-        textarea {
+        .profile-form-container input[type="text"],
+        .profile-form-container input[type="email"],
+        .profile-form-container input[type="tel"],
+        .profile-form-container input[type="url"],
+        .profile-form-container input[type="date"],
+        .profile-form-container input[type="number"],
+        .profile-form-container select,
+        .profile-form-container textarea {
           width: 100%;
           padding: 0.625rem 0.75rem;
           border: 1px solid var(--gray-300);

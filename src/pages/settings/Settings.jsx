@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Link } from 'react-router-dom';
 import apiService from '../../services/api/apiService';
+import { formatDate, formatFileSize } from '../../utils/formatters';
 import { 
   FaCog, 
   FaUser, 
@@ -67,12 +68,18 @@ const Settings = () => {
   // State for loading
   const [isLoading, setIsLoading] = useState(true);
   const [dataError, setDataError] = useState(null);
-  
-  // State for notification settings
+    // State for notification settings
+  const [notificationsEnabled, setNotificationsEnabled] = useState(true); // Master toggle
   const [emailNotifications, setEmailNotifications] = useState(true);
   const [pushNotifications, setPushNotifications] = useState(true);
   const [notifyOnProjectUpdate, setNotifyOnProjectUpdate] = useState(true);
   const [notifyOnMessage, setNotifyOnMessage] = useState(true);
+  
+  // State for additional notification types
+  const [notifyOnTasks, setNotifyOnTasks] = useState(true);
+  const [notifyOnCalendar, setNotifyOnCalendar] = useState(true);
+  const [notifyOnSecurity, setNotifyOnSecurity] = useState(true);
+  const [emailDigest, setEmailDigest] = useState(true);
   
   // State for account settings
   const [email, setEmail] = useState('');
@@ -85,13 +92,13 @@ const Settings = () => {
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
-  
-  // State for developer settings
+    // State for developer settings
   const [githubUsername, setGithubUsername] = useState('');
   const [preferredStack, setPreferredStack] = useState([]);
   const [stackInput, setStackInput] = useState('');
   const [devEnvironment, setDevEnvironment] = useState('vscode');
   const [codeSnippetTheme, setCodeSnippetTheme] = useState('monokai');
+  const [codeEditor, setCodeEditor] = useState(''); // Full editor name
   
   // State for localization settings
   const [language, setLanguage] = useState('en');
@@ -121,15 +128,16 @@ const Settings = () => {
   const [linkedinProfile, setLinkedinProfile] = useState('');
   const [twitterProfile, setTwitterProfile] = useState('');
   const [socialDisplay, setSocialDisplay] = useState('all');
-  
-  // State for backup & data
+    // State for backup & data
   const [autoBackup, setAutoBackup] = useState(true);
   const [backupFrequency, setBackupFrequency] = useState('weekly');
   const [lastBackup, setLastBackup] = useState(null);
-  const [exportFormat, setExportFormat] = useState('json');
-    // State for notification timing
+  const [lastBackupUrl, setLastBackupUrl] = useState(null);
+  const [lastBackupSize, setLastBackupSize] = useState(null);
+  const [exportFormat, setExportFormat] = useState('json');    // State for notification timing
   const [quietHoursFrom, setQuietHoursFrom] = useState('22:00');
   const [quietHoursTo, setQuietHoursTo] = useState('07:00');
+  const [quietHoursEnabled, setQuietHoursEnabled] = useState(false);
   
   // State for additional notification settings
   const [notificationTypes, setNotificationTypes] = useState({
@@ -144,12 +152,14 @@ const Settings = () => {
   const [showPhone, setShowPhone] = useState(true);
   const [profilePublic, setProfilePublic] = useState(true);
   const [allowSearchEngineIndexing, setAllowSearchEngineIndexing] = useState(true);
-  
-  // State for security settings
+    // State for security settings
   const [twoFactorEnabled, setTwoFactorEnabled] = useState(false);
   const [sessionTimeout, setSessionTimeout] = useState(30); // minutes
   const [loginNotifications, setLoginNotifications] = useState(true);
   const [apiKeysCount, setApiKeysCount] = useState(0);
+  const [activeApiKeysCount, setActiveApiKeysCount] = useState(0);
+  const [activeSessionsCount, setActiveSessionsCount] = useState(0);
+  const [lastActiveApiKey, setLastActiveApiKey] = useState(null);
   
   // State for appearance settings (additional)
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
@@ -251,21 +261,45 @@ const Settings = () => {
                 setAnimationsEnabled(settings.appearance.animations_enabled === 1);
               }
             }
-            
-            // Handle nested notification settings
+              // Handle nested notification settings
             if (settings.notifications) {
+              // Master toggle
+              if (settings.notifications.notifications_enabled !== undefined) {
+                setNotificationsEnabled(settings.notifications.notifications_enabled === 1);
+              }
+              
+              // Basic notification channels
               setEmailNotifications(settings.notifications.email_notifications === 1);
               setPushNotifications(settings.notifications.push_notifications === 1);
               setNotifyOnProjectUpdate(settings.notifications.project_updates === 1);
               setNotifyOnMessage(settings.notifications.messages === 1);
               
+              // Extended notification types
               if (settings.notifications.notification_types) {
-                setNotificationTypes(settings.notifications.notification_types);
+                const notifTypes = settings.notifications.notification_types;
+                setNotificationTypes(notifTypes);
+                
+                // Map individual notification types
+                if (notifTypes.tasks !== undefined) {
+                  setNotifyOnTasks(notifTypes.tasks);
+                }
+                if (notifTypes.calendar !== undefined) {
+                  setNotifyOnCalendar(notifTypes.calendar);
+                }
+                if (notifTypes.security !== undefined) {
+                  setNotifyOnSecurity(notifTypes.security);
+                }
+                if (notifTypes.system !== undefined) {
+                  setEmailDigest(notifTypes.system);
+                }
               }
               
+              // Quiet hours settings
               if (settings.notifications.quiet_hours) {
-                setQuietHoursFrom(settings.notifications.quiet_hours.from || '22:00');
-                setQuietHoursTo(settings.notifications.quiet_hours.to || '07:00');
+                const quietHours = settings.notifications.quiet_hours;
+                setQuietHoursFrom(quietHours.start || '22:00');
+                setQuietHoursTo(quietHours.end || '07:00');
+                setQuietHoursEnabled(quietHours.enabled === true);
               }
             }
             
@@ -277,8 +311,7 @@ const Settings = () => {
               setAllowSearchEngineIndexing(settings.privacy.allow_search_engine_indexing === 1);
               setPortfolioVisibility(settings.privacy.profile_public === 1 ? 'public' : 'private');
             }
-            
-            // Handle nested security settings
+              // Handle nested security settings
             if (settings.security) {
               setTwoFactorEnabled(settings.security.two_factor_enabled === 1);
               setLoginNotifications(settings.security.login_notifications === 1);
@@ -288,6 +321,15 @@ const Settings = () => {
               }
               if (settings.security.api_keys_count !== undefined) {
                 setApiKeysCount(settings.security.api_keys_count);
+              }
+              if (settings.security.active_api_keys !== undefined) {
+                setActiveApiKeysCount(settings.security.active_api_keys);
+              }
+              if (settings.security.active_sessions_count !== undefined) {
+                setActiveSessionsCount(settings.security.active_sessions_count);
+              }
+              if (settings.security.last_active_api_key) {
+                setLastActiveApiKey(settings.security.last_active_api_key);
               }
               if (settings.security.api_key) {
                 setApiKey(settings.security.api_key);
@@ -309,8 +351,7 @@ const Settings = () => {
                 setTimeFormat(settings.localization.time_format);
               }
             }
-            
-            // Handle nested backup settings
+              // Handle nested backup settings
             if (settings.backup) {
               setAutoBackup(settings.backup.auto_backup === 1);
               if (settings.backup.backup_frequency) {
@@ -321,6 +362,12 @@ const Settings = () => {
               }
               if (settings.backup.last_backup) {
                 setLastBackup(settings.backup.last_backup);
+              }
+              if (settings.backup.last_backup_url) {
+                setLastBackupUrl(settings.backup.last_backup_url);
+              }
+              if (settings.backup.last_backup_size) {
+                setLastBackupSize(settings.backup.last_backup_size);
               }
             }
             
@@ -347,8 +394,29 @@ const Settings = () => {
               setPortfolioVisibility(settings.profilePublic === 1 ? 'public' : 'private');
               setShowCodeSamples(settings.showEmail === 1);
               setShowProjectMetrics(settings.showPhone === 1);
+            }              // Developer settings
+            if (settings.developer) {
+              if (settings.developer.github_username) {
+                setGithubUsername(settings.developer.github_username);
+              }
+              if (settings.developer.development_environment) {
+                setDevEnvironment(settings.developer.development_environment);
+              }
+              if (settings.developer.code_editor) {
+                setCodeEditor(settings.developer.code_editor);
+              }
+              if (settings.developer.code_snippet_theme) {
+                setCodeSnippetTheme(settings.developer.code_snippet_theme);
+              }
+              if (settings.developer.webhook_url) {
+                setWebhookUrl(settings.developer.webhook_url);
+              }
+              if (settings.developer.webhook_events) {
+                setWebhookEvents(settings.developer.webhook_events);
+              }
             }
-              // Developer settings
+            
+            // Legacy developer settings fallback
             if (settings.githubUsername) {
               setGithubUsername(settings.githubUsername);
             }
@@ -697,8 +765,7 @@ const Settings = () => {
     setSaveSuccess(false);
     setSaveError(null);
     
-    try {
-      // Validate password if changing
+    try {      // Validate password if changing
       if (newPassword) {
         if (newPassword !== confirmPassword) {
           throw new Error('New passwords do not match');
@@ -709,6 +776,23 @@ const Settings = () => {
         if (!currentPassword) {
           throw new Error('Current password is required to change password');
         }
+      }
+
+      // Validate new fields
+      if (quietHoursEnabled && quietHoursFrom && quietHoursTo) {
+        const fromTime = new Date(`2000-01-01 ${quietHoursFrom}`);
+        const toTime = new Date(`2000-01-01 ${quietHoursTo}`);
+        if (fromTime >= toTime) {
+          throw new Error('Quiet hours "from" time must be before "to" time');
+        }
+      }
+
+      if (sessionTimeout && (sessionTimeout < 5 || sessionTimeout > 480)) {
+        throw new Error('Session timeout must be between 5 and 480 minutes');
+      }
+
+      if (codeEditor && codeEditor.trim().length > 100) {
+        throw new Error('Code editor preference should not exceed 100 characters');
       }
 
       // Prepare profile data
@@ -731,14 +815,21 @@ const Settings = () => {
           font_size: fontSize,
           sidebar_collapsed: sidebarCollapsed ? 1 : 0,
           animations_enabled: animationsEnabled ? 1 : 0
-        },
-        notifications: {
+        },        notifications: {
+          notifications_enabled: notificationsEnabled ? 1 : 0,
           email_notifications: emailNotifications ? 1 : 0,
           push_notifications: pushNotifications ? 1 : 0,
           project_updates: notifyOnProjectUpdate ? 1 : 0,
           messages: notifyOnMessage ? 1 : 0,
-          notification_types: notificationTypes,
+          notification_types: {
+            ...notificationTypes,
+            tasks: notifyOnTasks ? 1 : 0,
+            calendar: notifyOnCalendar ? 1 : 0,
+            security: notifyOnSecurity ? 1 : 0,
+            email_digest: emailDigest ? 1 : 0
+          },
           quiet_hours: {
+            enabled: quietHoursEnabled ? 1 : 0,
             from: quietHoursFrom,
             to: quietHoursTo
           }
@@ -753,32 +844,35 @@ const Settings = () => {
           show_phone: showPhone ? 1 : 0,
           profile_public: profilePublic ? 1 : 0,
           allow_search_engine_indexing: allowSearchEngineIndexing ? 1 : 0
-        },
-        security: {
+        },        security: {
           // Only include API key if it's been modified or generated
           ...(apiKey && apiKey !== import.meta.env.VITE_STRIPE_TEST_KEY && { api_key: apiKey }),
           two_factor_enabled: twoFactorEnabled ? 1 : 0,
           session_timeout: sessionTimeout,
           login_notifications: loginNotifications ? 1 : 0,
-          api_keys_count: apiKeysCount
+          api_keys_count: apiKeysCount,
+          active_api_keys: activeApiKeysCount,
+          active_sessions_count: activeSessionsCount,
+          last_active_api_key: lastActiveApiKey
         },
         localization: {
           language: language,
           timezone: timezone,
           date_format: dateFormat,
           time_format: timeFormat
-        },
-        backup: {
+        },        backup: {
           auto_backup: autoBackup ? 1 : 0,
           backup_frequency: backupFrequency,
           backup_location: backupLocation,
-          ...(lastBackup && { last_backup: lastBackup })
-        },
-        developer: {
+          ...(lastBackup && { last_backup: lastBackup }),
+          ...(lastBackupUrl && { last_backup_url: lastBackupUrl }),
+          ...(lastBackupSize && { last_backup_size: lastBackupSize })
+        },        developer: {
           github_username: githubUsername,
           development_environment: devEnvironment,
           webhook_url: webhookUrl,
           code_snippet_theme: codeSnippetTheme,
+          code_editor: codeEditor,
           preferred_tech_stack: preferredStack.map(tech => ({ name: tech }))
         },
         projects: {
@@ -1770,10 +1864,22 @@ const Settings = () => {
                         onChange={() => setDevEnvironment('other')}
                       />
                       <label htmlFor="env-other">Other</label>
-                    </div>
-                  </div>
+                    </div>                  </div>
                 </div>
-                  <div className="form-group">
+                
+                <div className="form-group">
+                  <label htmlFor="codeEditor">Code Editor</label>
+                  <input 
+                    type="text" 
+                    id="codeEditor" 
+                    value={codeEditor} 
+                    onChange={(e) => setCodeEditor(e.target.value)} 
+                    placeholder="e.g., Visual Studio Code 1.85.0"
+                  />
+                  <p className="form-help">Specific version and details of your code editor</p>
+                </div>
+                
+                <div className="form-group">
                   <label>Code Snippet Theme</label>
                   <div className="select-wrapper">
                     <select value={codeSnippetTheme} onChange={(e) => setCodeSnippetTheme(e.target.value)}>
@@ -1795,8 +1901,28 @@ const Settings = () => {
                 <h2><FaBell /> Notifications</h2>
                 <p>Manage how you receive updates</p>
               </div>
-              
-              <div className="settings-card">
+                <div className="settings-card">
+                <div className="form-group">
+                  <label>Master Notification Control</label>
+                  <div className="toggle-switch-group">
+                    <div className="toggle-switch-item">
+                      <div className="toggle-label">
+                        <FaBell className="toggle-icon" />
+                        <span>Enable all notifications</span>
+                      </div>
+                      <button 
+                        type="button"
+                        className="toggle-switch"
+                        onClick={() => setNotificationsEnabled(!notificationsEnabled)}
+                        aria-pressed={notificationsEnabled}
+                      >
+                        {notificationsEnabled ? <FaToggleOn className="toggle-on" /> : <FaToggleOff className="toggle-off" />}
+                      </button>
+                    </div>
+                  </div>
+                  <p className="form-help">Master toggle to enable or disable all notifications</p>
+                </div>
+
                 <div className="form-group">
                   <label>Notification Channels</label>
                   <div className="toggle-switch-group">
@@ -1893,8 +2019,7 @@ const Settings = () => {
                         {notificationTypes.collaborations ? <FaToggleOn className="toggle-on" /> : <FaToggleOff className="toggle-off" />}
                       </button>
                     </div>
-                    
-                    <div className="toggle-switch-item">
+                      <div className="toggle-switch-item">
                       <div className="toggle-label">
                         <FaCog className="toggle-icon" />
                         <span>System updates</span>
@@ -1908,29 +2033,112 @@ const Settings = () => {
                         {notificationTypes.system_updates ? <FaToggleOn className="toggle-on" /> : <FaToggleOff className="toggle-off" />}
                       </button>
                     </div>
+                    
+                    <div className="toggle-switch-item">
+                      <div className="toggle-label">
+                        <FaChartBar className="toggle-icon" />
+                        <span>Task updates</span>
+                      </div>
+                      <button 
+                        type="button"
+                        className="toggle-switch"
+                        onClick={() => setNotifyOnTasks(!notifyOnTasks)}
+                        aria-pressed={notifyOnTasks}
+                      >
+                        {notifyOnTasks ? <FaToggleOn className="toggle-on" /> : <FaToggleOff className="toggle-off" />}
+                      </button>
+                    </div>
+                    
+                    <div className="toggle-switch-item">
+                      <div className="toggle-label">
+                        <FaDesktop className="toggle-icon" />
+                        <span>Calendar events</span>
+                      </div>
+                      <button 
+                        type="button"
+                        className="toggle-switch"
+                        onClick={() => setNotifyOnCalendar(!notifyOnCalendar)}
+                        aria-pressed={notifyOnCalendar}
+                      >
+                        {notifyOnCalendar ? <FaToggleOn className="toggle-on" /> : <FaToggleOff className="toggle-off" />}
+                      </button>
+                    </div>
+                    
+                    <div className="toggle-switch-item">
+                      <div className="toggle-label">
+                        <FaShieldAlt className="toggle-icon" />
+                        <span>Security alerts</span>
+                      </div>
+                      <button 
+                        type="button"
+                        className="toggle-switch"
+                        onClick={() => setNotifyOnSecurity(!notifyOnSecurity)}
+                        aria-pressed={notifyOnSecurity}
+                      >
+                        {notifyOnSecurity ? <FaToggleOn className="toggle-on" /> : <FaToggleOff className="toggle-off" />}
+                      </button>
+                    </div>
+                    
+                    <div className="toggle-switch-item">
+                      <div className="toggle-label">
+                        <FaEnvelope className="toggle-icon" />
+                        <span>Daily email digest</span>
+                      </div>
+                      <button 
+                        type="button"
+                        className="toggle-switch"
+                        onClick={() => setEmailDigest(!emailDigest)}
+                        aria-pressed={emailDigest}
+                      >
+                        {emailDigest ? <FaToggleOn className="toggle-on" /> : <FaToggleOff className="toggle-off" />}
+                      </button>
+                    </div>
                   </div>
-                </div>
-                  <div className="form-group">
+                </div>                  <div className="form-group">
                   <label>Quiet Hours</label>
-                  <div className="time-range">
-                    <div className="time-input">
-                      <label>From</label>
-                      <input 
-                        type="time" 
-                        value={quietHoursFrom} 
-                        onChange={(e) => setQuietHoursFrom(e.target.value)} 
-                      />
-                    </div>
-                    <div className="time-input">
-                      <label>To</label>
-                      <input 
-                        type="time" 
-                        value={quietHoursTo} 
-                        onChange={(e) => setQuietHoursTo(e.target.value)} 
-                      />
+                  <div className="toggle-switch-group">
+                    <div className="toggle-switch-item">
+                      <div className="toggle-label">
+                        <FaBell className="toggle-icon" />
+                        <span>Enable quiet hours</span>
+                      </div>
+                      <button 
+                        type="button"
+                        className="toggle-switch"
+                        onClick={() => setQuietHoursEnabled(!quietHoursEnabled)}
+                        aria-pressed={quietHoursEnabled}
+                      >
+                        {quietHoursEnabled ? <FaToggleOn className="toggle-on" /> : <FaToggleOff className="toggle-off" />}
+                      </button>
                     </div>
                   </div>
-                  <p className="form-help">No notifications will be sent during these hours</p>
+                  
+                  {quietHoursEnabled && (
+                    <div className="time-range">
+                      <div className="time-input">
+                        <label>From</label>
+                        <input 
+                          type="time" 
+                          value={quietHoursFrom} 
+                          onChange={(e) => setQuietHoursFrom(e.target.value)} 
+                        />
+                      </div>
+                      <div className="time-input">
+                        <label>To</label>
+                        <input 
+                          type="time" 
+                          value={quietHoursTo} 
+                          onChange={(e) => setQuietHoursTo(e.target.value)} 
+                        />
+                      </div>
+                    </div>
+                  )}
+                  <p className="form-help">
+                    {quietHoursEnabled 
+                      ? "No notifications will be sent during these hours" 
+                      : "Enable quiet hours to set notification-free time periods"
+                    }
+                  </p>
                 </div>
               </div>
             </section>
@@ -2151,8 +2359,28 @@ const Settings = () => {
                         {loginNotifications ? <FaToggleOn className="toggle-on" /> : <FaToggleOff className="toggle-off" />}
                       </button>
                     </div>
+                  </div>                  <p className="form-help">Get notified when someone logs into your account</p>
+                </div>
+                
+                <div className="form-group">
+                  <label>Security Monitoring</label>
+                  <div className="security-stats">
+                    <div className="security-stat-item">
+                      <div className="security-stat-label">Active API Keys</div>
+                      <div className="security-stat-value">{activeApiKeysCount}</div>
+                    </div>
+                    <div className="security-stat-item">
+                      <div className="security-stat-label">Active Sessions</div>
+                      <div className="security-stat-value">{activeSessionsCount}</div>
+                    </div>
+                    {lastActiveApiKey && (
+                      <div className="security-stat-item">
+                        <div className="security-stat-label">Last Active API Key</div>
+                        <div className="security-stat-value">{lastActiveApiKey}</div>
+                      </div>
+                    )}
                   </div>
-                  <p className="form-help">Get notified when someone logs into your account</p>
+                  <p className="form-help">Monitor your account's security status</p>
                 </div>
                 
                 <div className="form-group">
@@ -2493,13 +2721,26 @@ const Settings = () => {
                   </div>
                   <p className="form-help">Choose where your backups are stored</p>
                 </div>
-                
-                <div className="form-group">
+                  <div className="form-group">
                   <label>Manual Backup</label>
                   <div className="backup-info">
-                    <div className="backup-date">
-                      <FaHistory className="backup-icon" />
-                      <span>Last backup: {lastBackup ? formatDate(lastBackup) : 'Never'}</span>
+                    <div className="backup-details">
+                      <div className="backup-date">
+                        <FaHistory className="backup-icon" />
+                        <span>Last backup: {lastBackup ? formatDate(lastBackup) : 'Never'}</span>
+                      </div>
+                      {lastBackupSize && (
+                        <div className="backup-size">
+                          <span>Size: {formatFileSize(lastBackupSize)}</span>
+                        </div>
+                      )}
+                      {lastBackupUrl && (
+                        <div className="backup-download">
+                          <a href={lastBackupUrl} target="_blank" rel="noopener noreferrer" className="btn-link">
+                            <FaCloudDownloadAlt /> Download Last Backup
+                          </a>
+                        </div>
+                      )}
                     </div>
                     <button type="button" className="btn-primary" onClick={handleBackupNow}>
                       <FaCloudUploadAlt /> Backup Now
@@ -3561,10 +3802,155 @@ const Settings = () => {
           border-top: 5px solid var(--gray-500);
           pointer-events: none;
         }
-        
-        .select-wrapper select {
+          .select-wrapper select {
           appearance: none;
           padding-right: calc(var(--spacing-md) * 2);
+        }
+        
+        /* New UI Elements Styles */
+        
+        /* Master Notification Toggle */
+        .notification-master-toggle {
+          padding: var(--spacing-lg);
+          background-color: var(--gray-50);
+          border-radius: var(--border-radius);
+          border: 1px solid var(--gray-200);
+          margin-bottom: var(--spacing-lg);
+        }
+        
+        .notification-master-toggle .toggle-label {
+          font-weight: 600;
+          color: var(--gray-900);
+        }
+        
+        /* Security Statistics */
+        .security-stats {
+          display: grid;
+          grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+          gap: var(--spacing-md);
+          margin-bottom: var(--spacing-lg);
+        }
+        
+        .security-stat-item {
+          display: flex;
+          align-items: center;
+          gap: var(--spacing-sm);
+          padding: var(--spacing-md);
+          background-color: var(--gray-50);
+          border-radius: var(--border-radius);
+          border: 1px solid var(--gray-200);
+        }
+        
+        .security-stat-icon {
+          width: 40px;
+          height: 40px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          background-color: var(--primary-color);
+          color: var(--white);
+          border-radius: var(--border-radius);
+          font-size: 1.2em;
+        }
+        
+        .security-stat-details h4 {
+          margin: 0;
+          font-size: var(--text-sm);
+          color: var(--gray-600);
+          font-weight: 500;
+        }
+        
+        .security-stat-details .stat-value {
+          font-size: var(--text-lg);
+          font-weight: 700;
+          color: var(--gray-900);
+          margin: 0;
+        }
+        
+        /* Backup Details */
+        .backup-details {
+          display: grid;
+          grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+          gap: var(--spacing-md);
+          margin-top: var(--spacing-lg);
+        }
+        
+        .backup-detail-item {
+          padding: var(--spacing-md);
+          background-color: var(--gray-50);
+          border-radius: var(--border-radius);
+          border: 1px solid var(--gray-200);
+        }
+        
+        .backup-detail-item h4 {
+          margin: 0 0 var(--spacing-xs) 0;
+          font-size: var(--text-sm);
+          color: var(--gray-600);
+          font-weight: 500;
+        }
+        
+        .backup-detail-item .detail-value {
+          font-size: var(--text-base);
+          font-weight: 600;
+          color: var(--gray-900);
+          margin: 0;
+        }
+        
+        .backup-download-link {
+          display: inline-flex;
+          align-items: center;
+          gap: var(--spacing-xs);
+          color: var(--primary-color);
+          text-decoration: none;
+          font-weight: 500;
+          transition: var(--transition-fast);
+        }
+        
+        .backup-download-link:hover {
+          color: var(--primary-dark);
+          text-decoration: underline;
+        }
+        
+        /* Quiet Hours Conditional Display */
+        .quiet-hours-details {
+          margin-top: var(--spacing-md);
+          padding: var(--spacing-md);
+          background-color: var(--gray-50);
+          border-radius: var(--border-radius);
+          border: 1px solid var(--gray-200);
+        }
+        
+        .quiet-hours-disabled {
+          opacity: 0.6;
+          pointer-events: none;
+        }
+        
+        /* Extended Notification Types */
+        .notification-types-extended {
+          display: grid;
+          grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+          gap: var(--spacing-sm);
+          margin-top: var(--spacing-md);
+        }
+        
+        /* Code Editor Input */
+        .code-editor-input {
+          margin-top: var(--spacing-md);
+        }
+        
+        .code-editor-input label {
+          display: block;
+          font-weight: 500;
+          margin-bottom: var(--spacing-sm);
+          color: var(--gray-800);
+        }
+        
+        .code-editor-input input {
+          width: 100%;
+          padding: var(--spacing-sm) var(--spacing-md);
+          border: 1px solid var(--gray-300);
+          border-radius: var(--border-radius);
+          font-size: var(--text-base);
         }
         
         /* Form Actions */

@@ -127,10 +127,39 @@ const Settings = () => {
   const [backupFrequency, setBackupFrequency] = useState('weekly');
   const [lastBackup, setLastBackup] = useState(null);
   const [exportFormat, setExportFormat] = useState('json');
-  
-  // State for notification timing
+    // State for notification timing
   const [quietHoursFrom, setQuietHoursFrom] = useState('22:00');
   const [quietHoursTo, setQuietHoursTo] = useState('07:00');
+  
+  // State for additional notification settings
+  const [notificationTypes, setNotificationTypes] = useState({
+    project_updates: true,
+    comments: true,
+    collaborations: true,
+    system_updates: true
+  });
+  
+  // State for privacy settings
+  const [showEmail, setShowEmail] = useState(true);
+  const [showPhone, setShowPhone] = useState(true);
+  const [profilePublic, setProfilePublic] = useState(true);
+  const [allowSearchEngineIndexing, setAllowSearchEngineIndexing] = useState(true);
+  
+  // State for security settings
+  const [twoFactorEnabled, setTwoFactorEnabled] = useState(false);
+  const [sessionTimeout, setSessionTimeout] = useState(30); // minutes
+  const [loginNotifications, setLoginNotifications] = useState(true);
+  const [apiKeysCount, setApiKeysCount] = useState(0);
+  
+  // State for appearance settings (additional)
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [animationsEnabled, setAnimationsEnabled] = useState(true);
+  
+  // State for localization settings (additional)
+  const [timeFormat, setTimeFormat] = useState('12'); // 12 or 24
+  
+  // State for backup settings (additional)
+  const [backupLocation, setBackupLocation] = useState('firebase');
   
   // State for projects and featured projects
   const [projects, setProjects] = useState([]);
@@ -200,32 +229,125 @@ const Settings = () => {
                 setGithubUsername(usernameMatch[1]);
               }
             }
-          }
-            // Map settings from profile if available
+          }          // Map settings from profile if available
           if (responseData.settings) {
             const settings = responseData.settings;
             
-            // Notification settings
-            setEmailNotifications(settings.emailNotifications === 1);
-            setPushNotifications(settings.pushNotifications === 1);
-            setNotifyOnProjectUpdate(settings.loginNotifications === 1);
-            setNotifyOnMessage(settings.notificationsEnabled === 1);
+            // Handle nested appearance settings
+            if (settings.appearance) {
+              if (settings.appearance.theme) {
+                setDarkMode(settings.appearance.theme === 'dark');
+              }
+              if (settings.appearance.primary_color) {
+                setPrimaryColor(settings.appearance.primary_color);
+              }
+              if (settings.appearance.font_size) {
+                setFontSize(settings.appearance.font_size);
+              }
+              if (settings.appearance.sidebar_collapsed !== undefined) {
+                setSidebarCollapsed(settings.appearance.sidebar_collapsed === 1);
+              }
+              if (settings.appearance.animations_enabled !== undefined) {
+                setAnimationsEnabled(settings.appearance.animations_enabled === 1);
+              }
+            }
             
-            // Theme settings
-            if (settings.theme) {
-              setDarkMode(settings.theme === 'dark');
-            }
-            if (settings.primaryColor) {
-              setPrimaryColor(settings.primaryColor);
-            }
-            if (settings.fontSize) {
-              setFontSize(settings.fontSize);
+            // Handle nested notification settings
+            if (settings.notifications) {
+              setEmailNotifications(settings.notifications.email_notifications === 1);
+              setPushNotifications(settings.notifications.push_notifications === 1);
+              setNotifyOnProjectUpdate(settings.notifications.project_updates === 1);
+              setNotifyOnMessage(settings.notifications.messages === 1);
+              
+              if (settings.notifications.notification_types) {
+                setNotificationTypes(settings.notifications.notification_types);
+              }
+              
+              if (settings.notifications.quiet_hours) {
+                setQuietHoursFrom(settings.notifications.quiet_hours.from || '22:00');
+                setQuietHoursTo(settings.notifications.quiet_hours.to || '07:00');
+              }
             }
             
-            // Privacy settings
-            setPortfolioVisibility(settings.profilePublic === 1 ? 'public' : 'private');
-            setShowCodeSamples(settings.showEmail === 1);
-            setShowProjectMetrics(settings.showPhone === 1);
+            // Handle nested privacy settings
+            if (settings.privacy) {
+              setProfilePublic(settings.privacy.profile_public === 1);
+              setShowEmail(settings.privacy.show_email === 1);
+              setShowPhone(settings.privacy.show_phone === 1);
+              setAllowSearchEngineIndexing(settings.privacy.allow_search_engine_indexing === 1);
+              setPortfolioVisibility(settings.privacy.profile_public === 1 ? 'public' : 'private');
+            }
+            
+            // Handle nested security settings
+            if (settings.security) {
+              setTwoFactorEnabled(settings.security.two_factor_enabled === 1);
+              setLoginNotifications(settings.security.login_notifications === 1);
+              
+              if (settings.security.session_timeout) {
+                setSessionTimeout(settings.security.session_timeout);
+              }
+              if (settings.security.api_keys_count !== undefined) {
+                setApiKeysCount(settings.security.api_keys_count);
+              }
+              if (settings.security.api_key) {
+                setApiKey(settings.security.api_key);
+              }
+            }
+            
+            // Handle nested localization settings
+            if (settings.localization) {
+              if (settings.localization.language) {
+                setLanguage(settings.localization.language);
+              }
+              if (settings.localization.timezone) {
+                setTimezone(settings.localization.timezone);
+              }
+              if (settings.localization.date_format) {
+                setDateFormat(settings.localization.date_format);
+              }
+              if (settings.localization.time_format) {
+                setTimeFormat(settings.localization.time_format);
+              }
+            }
+            
+            // Handle nested backup settings
+            if (settings.backup) {
+              setAutoBackup(settings.backup.auto_backup === 1);
+              if (settings.backup.backup_frequency) {
+                setBackupFrequency(settings.backup.backup_frequency);
+              }
+              if (settings.backup.backup_location) {
+                setBackupLocation(settings.backup.backup_location);
+              }
+              if (settings.backup.last_backup) {
+                setLastBackup(settings.backup.last_backup);
+              }
+            }
+            
+            // Fallback to old flat structure for backward compatibility
+            if (!settings.notifications && !settings.privacy && !settings.security) {
+              // Notification settings (legacy)
+              setEmailNotifications(settings.emailNotifications === 1);
+              setPushNotifications(settings.pushNotifications === 1);
+              setNotifyOnProjectUpdate(settings.loginNotifications === 1);
+              setNotifyOnMessage(settings.notificationsEnabled === 1);
+              
+              // Theme settings (legacy)
+              if (settings.theme) {
+                setDarkMode(settings.theme === 'dark');
+              }
+              if (settings.primaryColor) {
+                setPrimaryColor(settings.primaryColor);
+              }
+              if (settings.fontSize) {
+                setFontSize(settings.fontSize);
+              }
+              
+              // Privacy settings (legacy)
+              setPortfolioVisibility(settings.profilePublic === 1 ? 'public' : 'private');
+              setShowCodeSamples(settings.showEmail === 1);
+              setShowProjectMetrics(settings.showPhone === 1);
+            }
               // Developer settings
             if (settings.githubUsername) {
               setGithubUsername(settings.githubUsername);
@@ -282,21 +404,137 @@ const Settings = () => {
           if (settingsData && settingsData.settings) {
             const settings = settingsData.settings;
             
-            // Update settings that might be different from profile endpoint
-            if (settings.notifications && settings.notifications.emailNotifications !== undefined) {
-              setEmailNotifications(settings.notifications.emailNotifications === 1);
+            // Handle nested appearance settings
+            if (settings.appearance) {
+              if (settings.appearance.theme !== undefined) {
+                setDarkMode(settings.appearance.theme === 'dark');
+              }
+              if (settings.appearance.primary_color !== undefined) {
+                setPrimaryColor(settings.appearance.primary_color);
+              }
+              if (settings.appearance.font_size !== undefined) {
+                setFontSize(settings.appearance.font_size);
+              }
+              if (settings.appearance.sidebar_collapsed !== undefined) {
+                setSidebarCollapsed(settings.appearance.sidebar_collapsed === 1);
+              }
+              if (settings.appearance.animations_enabled !== undefined) {
+                setAnimationsEnabled(settings.appearance.animations_enabled === 1);
+              }
             }
-            if (settings.notifications && settings.notifications.pushNotifications !== undefined) {
-              setPushNotifications(settings.notifications.pushNotifications === 1);
+            
+            // Handle nested notification settings
+            if (settings.notifications) {
+              if (settings.notifications.email_notifications !== undefined) {
+                setEmailNotifications(settings.notifications.email_notifications === 1);
+              }
+              if (settings.notifications.push_notifications !== undefined) {
+                setPushNotifications(settings.notifications.push_notifications === 1);
+              }
+              if (settings.notifications.project_updates !== undefined) {
+                setNotifyOnProjectUpdate(settings.notifications.project_updates === 1);
+              }
+              if (settings.notifications.messages !== undefined) {
+                setNotifyOnMessage(settings.notifications.messages === 1);
+              }
+              if (settings.notifications.notification_types) {
+                setNotificationTypes(settings.notifications.notification_types);
+              }
+              if (settings.notifications.quiet_hours) {
+                setQuietHoursFrom(settings.notifications.quiet_hours.from || '22:00');
+                setQuietHoursTo(settings.notifications.quiet_hours.to || '07:00');
+              }
             }
-            if (settings.appearance && settings.appearance.theme !== undefined) {
-              setDarkMode(settings.appearance.theme === 'dark');
+            
+            // Handle nested privacy settings
+            if (settings.privacy) {
+              if (settings.privacy.profile_public !== undefined) {
+                setProfilePublic(settings.privacy.profile_public === 1);
+                setPortfolioVisibility(settings.privacy.profile_public === 1 ? 'public' : 'private');
+              }
+              if (settings.privacy.show_email !== undefined) {
+                setShowEmail(settings.privacy.show_email === 1);
+                setShowCodeSamples(settings.privacy.show_email === 1);
+              }
+              if (settings.privacy.show_phone !== undefined) {
+                setShowPhone(settings.privacy.show_phone === 1);
+                setShowProjectMetrics(settings.privacy.show_phone === 1);
+              }
+              if (settings.privacy.allow_search_engine_indexing !== undefined) {
+                setAllowSearchEngineIndexing(settings.privacy.allow_search_engine_indexing === 1);
+              }
             }
-            if (settings.appearance && settings.appearance.primaryColor !== undefined) {
-              setPrimaryColor(settings.appearance.primaryColor);
+            
+            // Handle nested security settings
+            if (settings.security) {
+              if (settings.security.two_factor_enabled !== undefined) {
+                setTwoFactorEnabled(settings.security.two_factor_enabled === 1);
+              }
+              if (settings.security.login_notifications !== undefined) {
+                setLoginNotifications(settings.security.login_notifications === 1);
+              }
+              if (settings.security.session_timeout) {
+                setSessionTimeout(settings.security.session_timeout);
+              }
+              if (settings.security.api_keys_count !== undefined) {
+                setApiKeysCount(settings.security.api_keys_count);
+              }
+              if (settings.security.api_key) {
+                setApiKey(settings.security.api_key);
+              }
             }
-            if (settings.appearance && settings.appearance.fontSize !== undefined) {
-              setFontSize(settings.appearance.fontSize);
+            
+            // Handle nested localization settings
+            if (settings.localization) {
+              if (settings.localization.language) {
+                setLanguage(settings.localization.language);
+              }
+              if (settings.localization.timezone) {
+                setTimezone(settings.localization.timezone);
+              }
+              if (settings.localization.date_format) {
+                setDateFormat(settings.localization.date_format);
+              }
+              if (settings.localization.time_format) {
+                setTimeFormat(settings.localization.time_format);
+              }
+            }
+            
+            // Handle nested backup settings
+            if (settings.backup) {
+              if (settings.backup.auto_backup !== undefined) {
+                setAutoBackup(settings.backup.auto_backup === 1);
+              }
+              if (settings.backup.backup_frequency) {
+                setBackupFrequency(settings.backup.backup_frequency);
+              }
+              if (settings.backup.backup_location) {
+                setBackupLocation(settings.backup.backup_location);
+              }
+              if (settings.backup.last_backup) {
+                setLastBackup(settings.backup.last_backup);
+              }
+            }
+            
+            // Fallback to old flat structure settings for backward compatibility
+            if (!settings.notifications && settings.notifications !== null) {
+              if (settings.emailNotifications !== undefined) {
+                setEmailNotifications(settings.emailNotifications === 1);
+              }
+              if (settings.pushNotifications !== undefined) {
+                setPushNotifications(settings.pushNotifications === 1);
+              }
+            }
+            if (!settings.appearance && settings.appearance !== null) {
+              if (settings.theme !== undefined) {
+                setDarkMode(settings.theme === 'dark');
+              }
+              if (settings.primaryColor !== undefined) {
+                setPrimaryColor(settings.primaryColor);
+              }
+              if (settings.fontSize !== undefined) {
+                setFontSize(settings.fontSize);
+              }
             }
               // Map featured projects from settings
             if (settings.projects && settings.projects.featured_projects) {
@@ -485,20 +723,21 @@ const Settings = () => {
           twitter: twitterProfile
         },
         skills: preferredStack.map(tech => ({ name: tech }))
-      };
-
-      // Prepare settings data
+      };      // Prepare settings data with comprehensive nested structure
       const settingsData = {
         appearance: {
           theme: darkMode ? 'dark' : 'light',
           primary_color: primaryColor,
-          font_size: fontSize
+          font_size: fontSize,
+          sidebar_collapsed: sidebarCollapsed ? 1 : 0,
+          animations_enabled: animationsEnabled ? 1 : 0
         },
         notifications: {
-          email_notifications: emailNotifications,
-          push_notifications: pushNotifications,
-          project_updates: notifyOnProjectUpdate,
-          messages: notifyOnMessage,
+          email_notifications: emailNotifications ? 1 : 0,
+          push_notifications: pushNotifications ? 1 : 0,
+          project_updates: notifyOnProjectUpdate ? 1 : 0,
+          messages: notifyOnMessage ? 1 : 0,
+          notification_types: notificationTypes,
           quiet_hours: {
             from: quietHoursFrom,
             to: quietHoursTo
@@ -506,23 +745,34 @@ const Settings = () => {
         },
         privacy: {
           portfolio_visibility: portfolioVisibility,
-          show_code_samples: showCodeSamples,
-          show_project_metrics: showProjectMetrics,
-          allow_project_comments: allowProjectComments,
-          social_display: socialDisplay
+          show_code_samples: showCodeSamples ? 1 : 0,
+          show_project_metrics: showProjectMetrics ? 1 : 0,
+          allow_project_comments: allowProjectComments ? 1 : 0,
+          social_display: socialDisplay,
+          show_email: showEmail ? 1 : 0,
+          show_phone: showPhone ? 1 : 0,
+          profile_public: profilePublic ? 1 : 0,
+          allow_search_engine_indexing: allowSearchEngineIndexing ? 1 : 0
         },
         security: {
           // Only include API key if it's been modified or generated
-          ...(apiKey && apiKey !== import.meta.env.VITE_STRIPE_TEST_KEY && { api_key: apiKey })
+          ...(apiKey && apiKey !== import.meta.env.VITE_STRIPE_TEST_KEY && { api_key: apiKey }),
+          two_factor_enabled: twoFactorEnabled ? 1 : 0,
+          session_timeout: sessionTimeout,
+          login_notifications: loginNotifications ? 1 : 0,
+          api_keys_count: apiKeysCount
         },
         localization: {
           language: language,
           timezone: timezone,
-          date_format: dateFormat
+          date_format: dateFormat,
+          time_format: timeFormat
         },
         backup: {
-          auto_backup: autoBackup,
-          frequency: backupFrequency
+          auto_backup: autoBackup ? 1 : 0,
+          backup_frequency: backupFrequency,
+          backup_location: backupLocation,
+          ...(lastBackup && { last_backup: lastBackup })
         },
         developer: {
           github_username: githubUsername,
@@ -565,27 +815,57 @@ const Settings = () => {
       setCurrentPassword('');
       setNewPassword('');
       setConfirmPassword('');
-      
-      // Update local storage with latest settings
+        // Update local storage with comprehensive settings
       const localSettings = {
+        // Appearance settings
         darkMode,
         primaryColor,
         fontSize,
+        sidebarCollapsed,
+        animationsEnabled,
+        
+        // Notification settings
         emailNotifications,
         pushNotifications,
         notifyOnProjectUpdate,
         notifyOnMessage,
+        notificationTypes,
+        quietHoursFrom,
+        quietHoursTo,
+        
+        // Privacy settings
         portfolioVisibility,
         showCodeSamples,
         showProjectMetrics,
         allowProjectComments,
+        showEmail,
+        showPhone,
+        profilePublic,
+        allowSearchEngineIndexing,
+        
+        // Security settings
+        twoFactorEnabled,
+        sessionTimeout,
+        loginNotifications,
+        apiKeysCount,
+        
+        // Developer settings
         preferredStack,
         devEnvironment,
         codeSnippetTheme,
         socialDisplay,
+        githubUsername,
+        
+        // Localization settings
         language,
         timezone,
-        dateFormat
+        dateFormat,
+        timeFormat,
+        
+        // Backup settings
+        autoBackup,
+        backupFrequency,
+        backupLocation
       };
       localStorage.setItem('developerSettings', JSON.stringify(localSettings));
       
@@ -641,24 +921,98 @@ const Settings = () => {
       setIsSaving(false);
     }
   };
-    // Handle backup now
+  // Handle backup now with Firebase Storage
   const handleBackupNow = async () => {
     try {
       setIsSaving(true);
       
-      // Call backup API endpoint
-      await apiService.settings.backup();
+      // Gather comprehensive user data for backup
+      const [profileResponse, settingsResponse, projectsResponse] = await Promise.all([
+        apiService.profile.get().catch(() => ({ data: null })),
+        apiService.settings.get().catch(() => ({ data: null })),
+        apiService.projects?.list?.().catch(() => ({ data: null }))
+      ]);
+      
+      // Prepare comprehensive backup data
+      const backupData = {
+        profile: profileResponse.data?.data || null,
+        settings: {
+          appearance: {
+            theme: darkMode ? 'dark' : 'light',
+            primary_color: primaryColor,
+            font_size: fontSize,
+            sidebar_collapsed: sidebarCollapsed,
+            animations_enabled: animationsEnabled
+          },
+          notifications: {
+            email_notifications: emailNotifications,
+            push_notifications: pushNotifications,
+            project_updates: notifyOnProjectUpdate,
+            messages: notifyOnMessage,
+            notification_types: notificationTypes,
+            quiet_hours: { from: quietHoursFrom, to: quietHoursTo }
+          },
+          privacy: {
+            portfolio_visibility: portfolioVisibility,
+            show_code_samples: showCodeSamples,
+            show_project_metrics: showProjectMetrics,
+            allow_project_comments: allowProjectComments,
+            social_display: socialDisplay,
+            show_email: showEmail,
+            show_phone: showPhone,
+            profile_public: profilePublic,
+            allow_search_engine_indexing: allowSearchEngineIndexing
+          },
+          security: {
+            two_factor_enabled: twoFactorEnabled,
+            session_timeout: sessionTimeout,
+            login_notifications: loginNotifications,
+            api_keys_count: apiKeysCount
+          },
+          localization: {
+            language: language,
+            timezone: timezone,
+            date_format: dateFormat,
+            time_format: timeFormat
+          },
+          backup: {
+            auto_backup: autoBackup,
+            backup_frequency: backupFrequency,
+            backup_location: backupLocation
+          },
+          developer: {
+            github_username: githubUsername,
+            development_environment: devEnvironment,
+            webhook_url: webhookUrl,
+            code_snippet_theme: codeSnippetTheme,
+            preferred_tech_stack: preferredStack
+          }
+        },
+        projects: projectsResponse.data?.data || null,
+        metadata: {
+          backup_created_at: new Date().toISOString(),
+          backup_type: 'manual',
+          version: '1.0'
+        }
+      };
+
+      // Create backup using Firebase Storage
+      const firebaseStorageService = (await import('../../services/firebase/storageService')).default;
+      const backupResult = await firebaseStorageService.createBackup(backupData, user?.id || 'anonymous');
       
       // Update last backup time
       const now = new Date().toISOString();
       setLastBackup(now);
       
-      // Update settings with new backup time
+      // Update settings with new backup time and result
       const settingsData = {
         backup: {
-          auto_backup: autoBackup,
-          frequency: backupFrequency,
-          last_backup: now
+          auto_backup: autoBackup ? 1 : 0,
+          backup_frequency: backupFrequency,
+          backup_location: backupLocation,
+          last_backup: now,
+          last_backup_url: backupResult.downloadURL,
+          last_backup_size: backupResult.size
         }
       };
       
@@ -923,8 +1277,7 @@ const Settings = () => {
                   </div>
                   <p className="form-help">Set your local time zone for accurate timestamps</p>
                 </div>
-                
-                <div className="form-group">
+                  <div className="form-group">
                   <label>Date Format</label>
                   <div className="toggle-group">
                     <div className="toggle-option">
@@ -961,6 +1314,35 @@ const Settings = () => {
                       <label htmlFor="date-ymd">YYYY/MM/DD</label>
                     </div>
                   </div>
+                </div>
+
+                <div className="form-group">
+                  <label>Time Format</label>
+                  <div className="toggle-group">
+                    <div className="toggle-option">
+                      <input 
+                        type="radio" 
+                        id="time-12" 
+                        name="time-format" 
+                        value="12"
+                        checked={timeFormat === '12'}
+                        onChange={() => setTimeFormat('12')}
+                      />
+                      <label htmlFor="time-12">12-hour (AM/PM)</label>
+                    </div>
+                    <div className="toggle-option">
+                      <input 
+                        type="radio" 
+                        id="time-24" 
+                        name="time-format" 
+                        value="24"
+                        checked={timeFormat === '24'}
+                        onChange={() => setTimeFormat('24')}
+                      />
+                      <label htmlFor="time-24">24-hour</label>
+                    </div>
+                  </div>
+                  <p className="form-help">Select your preferred time display format</p>
                 </div>
               </div>
             </section>
@@ -1216,8 +1598,89 @@ const Settings = () => {
                     These are your currently featured projects. You can unselect projects to remove them from your featured list (Ctrl+click to deselect).
                     {projects.length === 0 && !loadingProjects && (
                       <span className="error-text"> - No featured projects found. Go to Projects page to mark some projects as featured.</span>
-                    )}
-                  </p>
+                    )}                  </p>
+                </div>
+              </div>
+            </section>
+
+            {/* Privacy Settings */}
+            <section className="settings-section">
+              <div className="section-header">
+                <h2><FaEye /> Privacy</h2>
+                <p>Control your personal information visibility</p>
+              </div>
+              
+              <div className="settings-card">
+                <div className="form-group">
+                  <label>Contact Information</label>
+                  <div className="toggle-switch-group">
+                    <div className="toggle-switch-item">
+                      <div className="toggle-label">
+                        <FaEnvelope className="toggle-icon" />
+                        <span>Show email address</span>
+                      </div>
+                      <button 
+                        type="button"
+                        className="toggle-switch"
+                        onClick={() => setShowEmail(!showEmail)}
+                        aria-pressed={showEmail}
+                      >
+                        {showEmail ? <FaToggleOn className="toggle-on" /> : <FaToggleOff className="toggle-off" />}
+                      </button>
+                    </div>
+                    
+                    <div className="toggle-switch-item">
+                      <div className="toggle-label">
+                        <FaMobile className="toggle-icon" />
+                        <span>Show phone number</span>
+                      </div>
+                      <button 
+                        type="button"
+                        className="toggle-switch"
+                        onClick={() => setShowPhone(!showPhone)}
+                        aria-pressed={showPhone}
+                      >
+                        {showPhone ? <FaToggleOn className="toggle-on" /> : <FaToggleOff className="toggle-off" />}
+                      </button>
+                    </div>
+                  </div>
+                  <p className="form-help">Control which contact information is displayed on your portfolio</p>
+                </div>
+
+                <div className="form-group">
+                  <label>Profile Visibility</label>
+                  <div className="toggle-switch-group">
+                    <div className="toggle-switch-item">
+                      <div className="toggle-label">
+                        <FaGlobe className="toggle-icon" />
+                        <span>Public profile</span>
+                      </div>
+                      <button 
+                        type="button"
+                        className="toggle-switch"
+                        onClick={() => setProfilePublic(!profilePublic)}
+                        aria-pressed={profilePublic}
+                      >
+                        {profilePublic ? <FaToggleOn className="toggle-on" /> : <FaToggleOff className="toggle-off" />}
+                      </button>
+                    </div>
+                    
+                    <div className="toggle-switch-item">
+                      <div className="toggle-label">
+                        <FaRobot className="toggle-icon" />
+                        <span>Allow search engine indexing</span>
+                      </div>
+                      <button 
+                        type="button"
+                        className="toggle-switch"
+                        onClick={() => setAllowSearchEngineIndexing(!allowSearchEngineIndexing)}
+                        aria-pressed={allowSearchEngineIndexing}
+                      >
+                        {allowSearchEngineIndexing ? <FaToggleOn className="toggle-on" /> : <FaToggleOff className="toggle-off" />}
+                      </button>
+                    </div>
+                  </div>
+                  <p className="form-help">Control how your profile appears in search results</p>
                 </div>
               </div>
             </section>
@@ -1368,8 +1831,7 @@ const Settings = () => {
                     </div>
                   </div>
                 </div>
-                
-                <div className="form-group">
+                  <div className="form-group">
                   <label>Notification Types</label>
                   <div className="toggle-switch-group">
                     <div className="toggle-switch-item">
@@ -1399,6 +1861,51 @@ const Settings = () => {
                         aria-pressed={notifyOnMessage}
                       >
                         {notifyOnMessage ? <FaToggleOn className="toggle-on" /> : <FaToggleOff className="toggle-off" />}
+                      </button>
+                    </div>
+                    
+                    <div className="toggle-switch-item">
+                      <div className="toggle-label">
+                        <FaComments className="toggle-icon" />
+                        <span>Comments</span>
+                      </div>
+                      <button 
+                        type="button"
+                        className="toggle-switch"
+                        onClick={() => setNotificationTypes(prev => ({ ...prev, comments: !prev.comments }))}
+                        aria-pressed={notificationTypes.comments}
+                      >
+                        {notificationTypes.comments ? <FaToggleOn className="toggle-on" /> : <FaToggleOff className="toggle-off" />}
+                      </button>
+                    </div>
+                    
+                    <div className="toggle-switch-item">
+                      <div className="toggle-label">
+                        <FaNetworkWired className="toggle-icon" />
+                        <span>Collaborations</span>
+                      </div>
+                      <button 
+                        type="button"
+                        className="toggle-switch"
+                        onClick={() => setNotificationTypes(prev => ({ ...prev, collaborations: !prev.collaborations }))}
+                        aria-pressed={notificationTypes.collaborations}
+                      >
+                        {notificationTypes.collaborations ? <FaToggleOn className="toggle-on" /> : <FaToggleOff className="toggle-off" />}
+                      </button>
+                    </div>
+                    
+                    <div className="toggle-switch-item">
+                      <div className="toggle-label">
+                        <FaCog className="toggle-icon" />
+                        <span>System updates</span>
+                      </div>
+                      <button 
+                        type="button"
+                        className="toggle-switch"
+                        onClick={() => setNotificationTypes(prev => ({ ...prev, system_updates: !prev.system_updates }))}
+                        aria-pressed={notificationTypes.system_updates}
+                      >
+                        {notificationTypes.system_updates ? <FaToggleOn className="toggle-on" /> : <FaToggleOff className="toggle-off" />}
                       </button>
                     </div>
                   </div>
@@ -1592,13 +2099,60 @@ const Settings = () => {
                     </li>
                   </ul>
                 </div>
-                
-                <div className="form-group">
+                  <div className="form-group">
                   <label>Two-Factor Authentication</label>
-                  <button type="button" className="btn-primary">
-                    <FaShieldAlt /> Enable 2FA
-                  </button>
+                  <div className="toggle-switch-group">
+                    <div className="toggle-switch-item">
+                      <div className="toggle-label">
+                        <FaShieldAlt className="toggle-icon" />
+                        <span>Enable 2FA</span>
+                      </div>
+                      <button 
+                        type="button"
+                        className="toggle-switch"
+                        onClick={() => setTwoFactorEnabled(!twoFactorEnabled)}
+                        aria-pressed={twoFactorEnabled}
+                      >
+                        {twoFactorEnabled ? <FaToggleOn className="toggle-on" /> : <FaToggleOff className="toggle-off" />}
+                      </button>
+                    </div>
+                  </div>
                   <p className="form-help">Add an extra layer of security to your account</p>
+                </div>
+
+                <div className="form-group">
+                  <label htmlFor="sessionTimeout">Session Timeout (minutes)</label>
+                  <input 
+                    type="number" 
+                    id="sessionTimeout" 
+                    value={sessionTimeout} 
+                    onChange={(e) => setSessionTimeout(Number(e.target.value))}
+                    min="5"
+                    max="480"
+                    step="5"
+                  />
+                  <p className="form-help">Automatically log out after this period of inactivity</p>
+                </div>
+
+                <div className="form-group">
+                  <label>Login Notifications</label>
+                  <div className="toggle-switch-group">
+                    <div className="toggle-switch-item">
+                      <div className="toggle-label">
+                        <FaBell className="toggle-icon" />
+                        <span>Notify me of new logins</span>
+                      </div>
+                      <button 
+                        type="button"
+                        className="toggle-switch"
+                        onClick={() => setLoginNotifications(!loginNotifications)}
+                        aria-pressed={loginNotifications}
+                      >
+                        {loginNotifications ? <FaToggleOn className="toggle-on" /> : <FaToggleOff className="toggle-off" />}
+                      </button>
+                    </div>
+                  </div>
+                  <p className="form-help">Get notified when someone logs into your account</p>
                 </div>
                 
                 <div className="form-group">
@@ -1910,8 +2464,7 @@ const Settings = () => {
                     </div>
                   </div>
                 </div>
-                
-                <div className="form-group">
+                  <div className="form-group">
                   <label>Backup Frequency</label>
                   <div className="select-wrapper">
                     <select 
@@ -1924,6 +2477,21 @@ const Settings = () => {
                       <option value="monthly">Monthly</option>
                     </select>
                   </div>
+                </div>
+
+                <div className="form-group">
+                  <label>Backup Location</label>
+                  <div className="select-wrapper">
+                    <select 
+                      value={backupLocation} 
+                      onChange={(e) => setBackupLocation(e.target.value)}
+                    >
+                      <option value="firebase">Firebase Storage</option>
+                      <option value="local">Local Storage</option>
+                      <option value="cloud">Cloud Storage</option>
+                    </select>
+                  </div>
+                  <p className="form-help">Choose where your backups are stored</p>
                 </div>
                 
                 <div className="form-group">

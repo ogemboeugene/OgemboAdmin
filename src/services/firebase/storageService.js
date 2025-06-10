@@ -211,6 +211,115 @@ class FirebaseStorageService {
   }
 
   /**
+   * Create a backup of user data and upload to Firebase Storage
+   * @param {Object} userData - The user data to backup
+   * @param {string} userId - The user ID for organizing backups
+   * @returns {Promise<string>} - Returns the download URL of the backup
+   */
+  async createBackup(userData, userId) {
+    try {
+      console.log('Creating backup for user:', userId);
+      
+      // Create backup data structure
+      const backupData = {
+        timestamp: new Date().toISOString(),
+        userId: userId,
+        data: userData,
+        version: '1.0',
+        type: 'full_backup'
+      };
+      
+      // Convert to JSON string
+      const jsonData = JSON.stringify(backupData, null, 2);
+      
+      // Create a blob from the JSON data
+      const blob = new Blob([jsonData], { type: 'application/json' });
+      
+      // Generate backup filename with timestamp
+      const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+      const fileName = `backup_${userId}_${timestamp}.json`;
+      
+      // Create storage reference in backups folder
+      const storageRef = ref(storage, `backups/${userId}/${fileName}`);
+      
+      console.log('Uploading backup to Firebase Storage:', `backups/${userId}/${fileName}`);
+      
+      // Upload the backup file
+      const snapshot = await uploadBytes(storageRef, blob);
+      
+      // Get download URL
+      const downloadURL = await getDownloadURL(snapshot.ref);
+      
+      console.log('✅ Backup created successfully:', downloadURL);
+      
+      return {
+        success: true,
+        downloadURL: downloadURL,
+        fileName: fileName,
+        size: blob.size,
+        timestamp: backupData.timestamp
+      };
+      
+    } catch (error) {
+      console.error('❌ Error creating backup:', error);
+      throw new Error(`Failed to create backup: ${error.message}`);
+    }
+  }
+
+  /**
+   * List all backups for a user
+   * @param {string} userId - The user ID
+   * @returns {Promise<Array>} - Returns array of backup metadata
+   */
+  async listBackups(userId) {
+    try {
+      // Note: Firebase Storage doesn't have a direct list operation in the web SDK
+      // This would typically be handled by a backend service
+      // For now, we'll return a placeholder response
+      console.log('Listing backups for user:', userId);
+      
+      return {
+        success: true,
+        backups: [],
+        message: 'Backup listing requires backend implementation'
+      };
+      
+    } catch (error) {
+      console.error('❌ Error listing backups:', error);
+      throw new Error(`Failed to list backups: ${error.message}`);
+    }
+  }
+
+  /**
+   * Delete a backup file
+   * @param {string} userId - The user ID
+   * @param {string} fileName - The backup filename to delete
+   * @returns {Promise<boolean>} - Returns success status
+   */
+  async deleteBackup(userId, fileName) {
+    try {
+      console.log('Deleting backup:', fileName);
+      
+      // Create storage reference
+      const storageRef = ref(storage, `backups/${userId}/${fileName}`);
+      
+      // Delete the file
+      await deleteObject(storageRef);
+      
+      console.log('✅ Backup deleted successfully:', fileName);
+      
+      return {
+        success: true,
+        message: 'Backup deleted successfully'
+      };
+      
+    } catch (error) {
+      console.error('❌ Error deleting backup:', error);
+      throw new Error(`Failed to delete backup: ${error.message}`);
+    }
+  }
+
+  /**
    * Generate a unique filename with timestamp and random string
    * @param {string} originalName - Original filename
    * @returns {string} - Unique filename

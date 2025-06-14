@@ -20,18 +20,29 @@ const FilterControls = ({
   setSelectedMetrics,
   refreshRate,
   setRefreshRate,
-  settingsConfig 
+  settingsConfig,
+  filterOptions
 }) => {
   const [showAdvanced, setShowAdvanced] = useState(false);
-  const [projects] = useState([
+  
+  // Use server data when available, fallback to defaults
+  const projects = filterOptions?.projects ? [
+    { id: 'all', name: 'All Projects' },
+    ...filterOptions.projects.map(project => ({
+      id: project.id,
+      name: project.title,
+      status: project.status,
+      category: project.category
+    }))
+  ] : [
     { id: 'all', name: 'All Projects' },
     { id: 'ogemboadmin', name: 'OgemboAdmin' },
     { id: 'portfolio', name: 'Portfolio Site' },
     { id: 'api-service', name: 'API Service' },
     { id: 'mobile-app', name: 'Mobile App' }
-  ]);
+  ];
 
-  const timeRanges = [
+  const timeRanges = filterOptions?.timeframes || [
     { value: '24h', label: 'Last 24 Hours' },
     { value: '7d', label: 'Last 7 Days' },
     { value: '30d', label: 'Last 30 Days' },
@@ -40,13 +51,17 @@ const FilterControls = ({
     { value: 'custom', label: 'Custom Range' }
   ];
 
+  // Combine chart types from server with local metrics options
   const metricsOptions = [
     { value: 'overview', label: 'Overview Dashboard' },
     { value: 'development', label: 'Development Metrics' },
     { value: 'performance', label: 'Performance Analytics' },
-    { value: 'quality', label: 'Code Quality' },
-    { value: 'security', label: 'Security Insights' },
-    { value: 'team', label: 'Team Collaboration' }
+    { value: 'quality', label: 'Code Quality' },    { value: 'security', label: 'Security Insights' },
+    { value: 'team', label: 'Team Collaboration' },
+    ...(filterOptions?.chartTypes || []).map(chart => ({
+      value: chart.value,
+      label: chart.label
+    }))
   ];
 
   const refreshOptions = [
@@ -190,7 +205,116 @@ const FilterControls = ({
                     <option value="json">JSON Data</option>
                   </select>
                 </div>
-              </div>
+              </div>              {/* Additional Server-based Filters */}
+              {filterOptions && (
+                <>
+                  <div className="analytics-filter-row">
+                    {filterOptions.periods && filterOptions.periods.length > 0 && (
+                      <div className="analytics-filter-group">
+                        <label className="analytics-filter-label">
+                          <FaCalendarAlt />
+                          Period
+                        </label>
+                        <select className="analytics-filter-select">
+                          <option value="">All Periods</option>
+                          {filterOptions.periods.map(period => (
+                            <option key={period.value} value={period.value}>
+                              {period.label}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    )}
+
+                    {filterOptions.chartTypes && filterOptions.chartTypes.length > 0 && (
+                      <div className="analytics-filter-group">
+                        <label className="analytics-filter-label">
+                          <FaChartBar />
+                          Chart Type
+                        </label>
+                        <select className="analytics-filter-select">
+                          <option value="">Default Charts</option>
+                          {filterOptions.chartTypes.map(chart => (
+                            <option key={chart.value} value={chart.value}>
+                              {chart.label}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    )}
+
+                    {filterOptions.technologies && filterOptions.technologies.length > 0 && (
+                      <div className="analytics-filter-group">
+                        <label className="analytics-filter-label">
+                          <FaCog />
+                          Technology
+                        </label>
+                        <select className="analytics-filter-select">
+                          <option value="">All Technologies</option>
+                          {filterOptions.technologies.map(tech => (
+                            <option key={tech.value} value={tech.value}>
+                              {tech.label}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="analytics-filter-row">
+                    {filterOptions.languages && filterOptions.languages.length > 0 && (
+                      <div className="analytics-filter-group">
+                        <label className="analytics-filter-label">
+                          <FaFolderOpen />
+                          Language
+                        </label>
+                        <select className="analytics-filter-select">
+                          <option value="">All Languages</option>
+                          {filterOptions.languages.map(lang => (
+                            <option key={lang.value} value={lang.value}>
+                              {lang.label}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    )}
+
+                    {filterOptions.taskStatuses && filterOptions.taskStatuses.length > 0 && (
+                      <div className="analytics-filter-group">
+                        <label className="analytics-filter-label">
+                          <FaChartBar />
+                          Task Status
+                        </label>
+                        <select className="analytics-filter-select">
+                          <option value="">All Statuses</option>
+                          {filterOptions.taskStatuses.map(status => (
+                            <option key={status.value} value={status.value}>
+                              {status.label}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    )}
+
+                    {filterOptions.eventTypes && filterOptions.eventTypes.length > 0 && (
+                      <div className="analytics-filter-group">
+                        <label className="analytics-filter-label">
+                          <FaCalendarAlt />
+                          Event Type
+                        </label>
+                        <select className="analytics-filter-select">
+                          <option value="">All Event Types</option>
+                          {filterOptions.eventTypes.map(event => (
+                            <option key={event.value} value={event.value}>
+                              {event.label}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    )}
+                  </div>
+                </>
+              )}
 
               {/* Quick Filters */}
               <div className="analytics-quick-filters">

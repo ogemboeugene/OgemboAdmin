@@ -40,6 +40,7 @@ import RealTimeCharts from './components/RealTimeCharts';
 import PerformanceMetrics from './components/PerformanceMetrics';
 import UserEngagementAnalytics from './components/UserEngagementAnalytics';
 import FilterControls from './components/FilterControls';
+import SystemStatus from './components/SystemStatus';
 import './Analytics.css';
 
 const Analytics = () => {
@@ -50,10 +51,17 @@ const Analytics = () => {
   const [selectedMetrics, setSelectedMetrics] = useState('overview');  const [isFullscreen, setIsFullscreen] = useState(false);  const [refreshRate, setRefreshRate] = useState(30); // seconds
   const [settingsConfig, setSettingsConfig] = useState({});
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
-  
   // Data states for API integration
   const [sessionStats, setSessionStats] = useState(null);
   const [performanceData, setPerformanceData] = useState(null);
+  const [developerMetrics, setDeveloperMetrics] = useState(null);
+  const [chartsData, setChartsData] = useState(null);
+  const [projectHealthData, setProjectHealthData] = useState(null);
+  const [performanceMetricsData, setPerformanceMetricsData] = useState(null);
+  const [codeQualityData, setCodeQualityData] = useState(null);
+  const [userEngagementData, setUserEngagementData] = useState(null);
+  const [filterOptions, setFilterOptions] = useState(null);
+  const [systemStatusData, setSystemStatusData] = useState(null);
   const [dataLoading, setDataLoading] = useState(false);
   const [lastDataUpdate, setLastDataUpdate] = useState(null);
   
@@ -273,6 +281,593 @@ const Analytics = () => {
     }
   };
 
+  // Fetch developer metrics from API
+  const fetchDeveloperMetrics = async () => {
+    try {
+      setDataLoading(true);
+      // Map selectedTimeRange to API period parameter
+      const periodMapping = {
+        '24h': 'week', // closest match
+        '7d': 'week',
+        '30d': 'month',
+        '90d': 'quarter',
+        '1y': 'year'
+      };
+      
+      const period = periodMapping[selectedTimeRange] || 'year';
+      const response = await apiService.analytics.getDeveloperMetrics({ period });
+      
+      if (response.data && response.data.success) {
+        const data = response.data.data;
+        setDeveloperMetrics({
+          period: data.period,
+          overview: {
+            projects: {
+              total: data.overview.projects.total,
+              active: data.overview.projects.active,
+              completed: data.overview.projects.completed,
+              completionRate: data.overview.projects.completionRate
+            },
+            tasks: {
+              total: data.overview.tasks.total,
+              completed: data.overview.tasks.completed,
+              overdue: data.overview.tasks.overdue,
+              completionRate: data.overview.tasks.completionRate,
+              overdueRate: data.overview.tasks.overdueRate
+            },
+            skills: {
+              total: data.overview.skills.total,
+              categories: data.overview.skills.categories
+            },
+            portfolio: {
+              weeklyVisitors: data.overview.portfolio.weeklyVisitors,
+              profileViews: data.overview.portfolio.profileViews,
+              avgViewsPerDay: data.overview.portfolio.avgViewsPerDay
+            }
+          },
+          productivity: {
+            overallScore: data.productivity.overallScore,
+            projectCompletionRate: data.productivity.projectCompletionRate,
+            taskCompletionRate: data.productivity.taskCompletionRate,
+            timelineAdherence: data.productivity.timelineAdherence
+          },
+          technologies: data.technologies,
+          experience: {
+            totalJobs: data.experience.totalJobs,
+            totalEducation: data.experience.totalEducation,
+            upcomingEvents: data.experience.upcomingEvents
+          }
+        });
+        console.log('✅ Developer metrics loaded:', data);
+      }
+    } catch (error) {
+      console.error('❌ Error fetching developer metrics:', error);
+      // Set fallback data
+      setDeveloperMetrics({
+        period: selectedTimeRange,
+        overview: {
+          projects: { total: 0, active: 0, completed: 0, completionRate: 0 },
+          tasks: { total: 0, completed: 0, overdue: 0, completionRate: 0, overdueRate: 0 },
+          skills: { total: 0, categories: {} },
+          portfolio: { weeklyVisitors: 0, profileViews: 0, avgViewsPerDay: 0 }
+        },
+        productivity: {
+          overallScore: 0,
+          projectCompletionRate: 0,
+          taskCompletionRate: 0,
+          timelineAdherence: 0
+        },
+        technologies: [],
+        experience: { totalJobs: 0, totalEducation: 0, upcomingEvents: 0 }
+      });
+    } finally {
+      setDataLoading(false);
+    }
+  };
+
+  // Fetch charts data from API
+  const fetchChartsData = async () => {
+    try {
+      setDataLoading(true);
+      // Map selectedTimeRange to API timeframe parameter
+      const timeframeMapping = {
+        '24h': '7d', // closest match
+        '7d': '7d',
+        '30d': '30d',
+        '90d': '90d',
+        '1y': '365d'
+      };
+      
+      const timeframe = timeframeMapping[selectedTimeRange] || '30d';
+      const response = await apiService.analytics.getChartsData({ 
+        timeframe,
+        chartType: 'all' // Get all chart types
+      });
+      
+      if (response.data && response.data.success) {
+        const data = response.data.data;
+        setChartsData({
+          timeframe: data.timeframe,
+          charts: data.charts,
+          // Process calendar events data for charts
+          calendarEvents: data.charts.calendarEvents || [],
+          // Additional chart data processing can be added here
+        });
+        console.log('✅ Charts data loaded:', data);
+      }
+    } catch (error) {
+      console.error('❌ Error fetching charts data:', error);
+      // Set fallback data
+      setChartsData({
+        timeframe: selectedTimeRange,
+        charts: {},
+        calendarEvents: []
+      });
+    } finally {
+      setDataLoading(false);
+    }
+  };
+
+  // Fetch project health data from API
+  const fetchProjectHealthData = async () => {
+    try {
+      setDataLoading(true);
+      const response = await apiService.analytics.getProjectHealth();
+      
+      if (response.data && response.data.success) {
+        const data = response.data.data;
+        setProjectHealthData({
+          overallHealth: {
+            averageScore: data.overallHealth.averageScore,
+            criticalProjects: data.overallHealth.criticalProjects,
+            warningProjects: data.overallHealth.warningProjects,
+            healthyProjects: data.overallHealth.healthyProjects
+          },
+          projects: data.projects.map(project => ({
+            id: project.id,
+            title: project.title,
+            status: project.status,
+            priority: project.priority,
+            healthScore: project.healthScore,
+            healthStatus: project.healthStatus,
+            metrics: project.metrics,
+            taskDistribution: project.taskDistribution,
+            deadline: project.deadline
+          })),
+          summary: data.summary
+        });
+        console.log('✅ Project health data loaded:', data);
+      }
+    } catch (error) {
+      console.error('❌ Error fetching project health data:', error);
+      // Set fallback data
+      setProjectHealthData({
+        overallHealth: {
+          averageScore: 0,
+          criticalProjects: 0,
+          warningProjects: 0,
+          healthyProjects: 0
+        },
+        projects: [],
+        summary: {
+          totalProjects: 0,
+          activeProjects: 0,
+          completedProjects: 0,
+          criticalIssues: 0
+        }
+      });
+    } finally {
+      setDataLoading(false);
+    }
+  };
+
+  // Fetch performance metrics data from API
+  const fetchPerformanceMetricsData = async () => {
+    try {
+      setDataLoading(true);
+      // Map selectedTimeRange to API period parameter
+      const periodMapping = {
+        '24h': 'week',
+        '7d': 'week',
+        '30d': 'month',
+        '90d': 'quarter',
+        '1y': 'year'
+      };
+      
+      const period = periodMapping[selectedTimeRange] || 'month';
+      const response = await apiService.analytics.getPerformanceMetrics({ period });
+      
+      if (response.data && response.data.success) {
+        const data = response.data.data;
+        setPerformanceMetricsData({
+          period: data.period,
+          dateRange: data.date_range,
+          taskPerformance: {
+            totalTasks: data.task_performance.total_tasks,
+            completedTasks: data.task_performance.completed_tasks,
+            overdueTasks: data.task_performance.overdue_tasks,
+            completionRate: data.task_performance.completion_rate,
+            overdueRate: data.task_performance.overdue_rate,
+            avgCompletionDays: data.task_performance.avg_completion_days
+          },
+          projectPerformance: {
+            totalProjects: data.project_performance.total_projects,
+            completedProjects: data.project_performance.completed_projects,
+            activeProjects: data.project_performance.active_projects,
+            completionRate: data.project_performance.completion_rate
+          },
+          eventPerformance: {
+            totalEvents: data.event_performance.total_events,
+            pastEvents: data.event_performance.past_events,
+            attendanceRate: data.event_performance.attendance_rate
+          },
+          velocity: data.velocity || [],
+          overallScore: data.overall_score
+        });
+        console.log('✅ Performance metrics data loaded:', data);
+      }
+    } catch (error) {
+      console.error('❌ Error fetching performance metrics data:', error);
+      // Set fallback data
+      setPerformanceMetricsData({
+        period: selectedTimeRange,
+        dateRange: { start: null, end: null },
+        taskPerformance: {
+          totalTasks: 0,
+          completedTasks: 0,
+          overdueTasks: 0,
+          completionRate: 0,
+          overdueRate: 0,
+          avgCompletionDays: 0
+        },
+        projectPerformance: {
+          totalProjects: 0,
+          completedProjects: 0,
+          activeProjects: 0,
+          completionRate: 0
+        },
+        eventPerformance: {
+          totalEvents: 0,
+          pastEvents: 0,
+          attendanceRate: 0
+        },
+        velocity: [],
+        overallScore: 0
+      });
+    } finally {
+      setDataLoading(false);
+    }
+  };
+
+  // Fetch code quality data from API
+  const fetchCodeQualityData = async () => {
+    try {
+      setDataLoading(true);
+      const response = await apiService.analytics.getCodeQuality();
+      
+      if (response.data && response.data.success) {
+        const data = response.data.data;
+        setCodeQualityData({
+          overview: {
+            totalRepositories: data.overview.totalRepositories,
+            totalStars: data.overview.totalStars,
+            totalForks: data.overview.totalForks,
+            avgStarsPerRepo: data.overview.avgStarsPerRepo,
+            primaryLanguages: data.overview.primaryLanguages,
+            technologiesUsed: data.overview.technologiesUsed
+          },
+          codeQuality: {
+            maintainabilityIndex: data.codeQuality.maintainabilityIndex,
+            technicalDebt: data.codeQuality.technicalDebt,
+            codeComplexity: data.codeQuality.codeComplexity,
+            testCoverage: data.codeQuality.testCoverage,
+            duplicateCodePercentage: data.codeQuality.duplicateCodePercentage,
+            issueResolutionTime: data.codeQuality.issueResolutionTime
+          },
+          technology: {
+            topTechnologies: data.technology.topTechnologies,
+            languageDistribution: data.technology.languageDistribution,
+            diversityIndex: data.technology.diversityIndex
+          },
+          repositories: data.repositories,
+          recommendations: data.recommendations || []
+        });
+        console.log('✅ Code quality data loaded:', data);
+      }
+    } catch (error) {
+      console.error('❌ Error fetching code quality data:', error);
+      // Set fallback data
+      setCodeQualityData({
+        overview: {
+          totalRepositories: 0,
+          totalStars: 0,
+          totalForks: 0,
+          avgStarsPerRepo: 0,
+          primaryLanguages: 0,
+          technologiesUsed: 0
+        },
+        codeQuality: {
+          maintainabilityIndex: 0,
+          technicalDebt: 0,
+          codeComplexity: 0,
+          testCoverage: 0,
+          duplicateCodePercentage: 0,
+          issueResolutionTime: 0
+        },
+        technology: {
+          topTechnologies: [],
+          languageDistribution: [],
+          diversityIndex: 0
+        },
+        repositories: [],
+        recommendations: []
+      });
+    } finally {
+      setDataLoading(false);
+    }
+  };
+
+  // Fetch user engagement data from API
+  const fetchUserEngagementData = async () => {
+    try {
+      setDataLoading(true);
+      // Map timeRange to period for the API
+      const periodMapping = {
+        '7d': 'week',
+        '30d': 'month',
+        '90d': 'quarter',
+        '1y': 'year'
+      };
+      
+      const period = periodMapping[selectedTimeRange] || 'month';
+      const response = await apiService.analytics.getUserEngagement({ period });
+      
+      if (response.data && response.data.success) {
+        const data = response.data.data;
+        setUserEngagementData({
+          period: data.period,
+          engagement: {
+            score: data.engagement.score,
+            level: data.engagement.level,
+            factors: data.engagement.factors
+          },
+          sessions: {
+            total: data.sessions.total,
+            uniqueDevices: data.sessions.uniqueDevices,
+            avgDuration: data.sessions.avgDuration
+          },
+          portfolio: {
+            visitors: data.portfolio.visitors,
+            profileViews: data.portfolio.profileViews,
+            avgTimeOnSite: data.portfolio.avgTimeOnSite,
+            bounceRate: data.portfolio.bounceRate
+          },
+          activity: {
+            taskUpdates: data.activity.taskUpdates,
+            projectUpdates: data.activity.projectUpdates,
+            eventUpdates: data.activity.eventUpdates,
+            comments: data.activity.comments,
+            total: data.activity.total,
+            dailyBreakdown: data.activity.dailyBreakdown || []
+          },
+          insights: data.insights || []
+        });
+        console.log('✅ User engagement data loaded:', data);
+      }
+    } catch (error) {
+      console.error('❌ Error fetching user engagement data:', error);
+      // Set fallback data
+      setUserEngagementData({
+        period: selectedTimeRange,
+        engagement: {
+          score: 0,
+          level: 'unknown',
+          factors: {
+            sessionActivity: 0,
+            avgSessionDuration: 0,
+            totalActions: 0,
+            profileCompleteness: 0
+          }
+        },
+        sessions: { total: 0, uniqueDevices: 0, avgDuration: 0 },
+        portfolio: { visitors: 0, profileViews: 0, avgTimeOnSite: 0, bounceRate: 0 },
+        activity: {
+          taskUpdates: 0,
+          projectUpdates: 0,
+          eventUpdates: 0,
+          comments: 0,
+          total: 0,
+          dailyBreakdown: []
+        },
+        insights: []
+      });
+    } finally {
+      setDataLoading(false);
+    }
+  };
+  // Fetch filter options from API
+  const fetchFilterOptions = async () => {
+    try {
+      const response = await apiService.analytics.getFilterOptions();
+      
+      if (response.data && response.data.success) {
+        const data = response.data.data;
+        
+        // Map all filter options with proper fallbacks and deduplication
+        setFilterOptions({
+          timeframes: data.timeframes || [
+            { value: '7d', label: 'Last 7 days' },
+            { value: '30d', label: 'Last 30 days' },
+            { value: '90d', label: 'Last 90 days' },
+            { value: '1y', label: 'Last year' }
+          ],
+          periods: data.periods || [
+            { value: 'week', label: 'This week' },
+            { value: 'month', label: 'This month' },
+            { value: 'quarter', label: 'This quarter' },
+            { value: 'year', label: 'This year' }
+          ],
+          projects: data.projects || [],
+          technologies: Array.isArray(data.technologies) ? 
+            data.technologies.filter((tech, index, self) => 
+              index === self.findIndex(t => t.value === tech.value)
+            ) : [],
+          languages: Array.isArray(data.languages) ? 
+            data.languages.filter((lang, index, self) => 
+              index === self.findIndex(l => l.value === lang.value)
+            ) : [],
+          eventTypes: Array.isArray(data.eventTypes) ? 
+            data.eventTypes.filter((event, index, self) => 
+              index === self.findIndex(e => e.value === event.value)
+            ) : [],
+          taskStatuses: Array.isArray(data.taskStatuses) ? 
+            data.taskStatuses.filter((status, index, self) => 
+              index === self.findIndex(s => s.value === status.value)
+            ) : [],
+          chartTypes: data.chartTypes || [
+            { value: 'bar', label: 'Bar Chart' },
+            { value: 'line', label: 'Line Chart' },
+            { value: 'pie', label: 'Pie Chart' },
+            { value: 'area', label: 'Area Chart' }
+          ]
+        });
+        console.log('✅ Filter options loaded and deduplicated:', data);
+      }
+    } catch (error) {
+      console.error('❌ Error fetching filter options:', error);
+      // Set comprehensive fallback data
+      setFilterOptions({
+        timeframes: [
+          { value: '7d', label: 'Last 7 days' },
+          { value: '30d', label: 'Last 30 days' },
+          { value: '90d', label: 'Last 90 days' },
+          { value: '1y', label: 'Last year' }
+        ],
+        periods: [
+          { value: 'week', label: 'This week' },
+          { value: 'month', label: 'This month' },
+          { value: 'quarter', label: 'This quarter' },
+          { value: 'year', label: 'This year' }
+        ],
+        projects: [],
+        technologies: [],
+        languages: [],
+        eventTypes: [],
+        taskStatuses: [],
+        chartTypes: [
+          { value: 'bar', label: 'Bar Chart' },
+          { value: 'line', label: 'Line Chart' },
+          { value: 'pie', label: 'Pie Chart' },
+          { value: 'area', label: 'Area Chart' }
+        ]
+      });
+    }
+  };
+  // Fetch system status data from API
+  const fetchSystemStatusData = async () => {
+    try {
+      console.log('🔄 Fetching system status data...');
+      const response = await apiService.analytics.getSystemStatus();
+      console.log('📊 System status response:', response);
+      
+      if (response.data && response.data.success) {
+        const data = response.data.data;
+        console.log('✅ System status data received:', data);
+        setSystemStatusData({
+          systemHealth: data.systemHealth,
+          healthScore: data.healthScore,
+          platform: {
+            totalUsers: data.platform.totalUsers,
+            activeUsers: data.platform.activeUsers,
+            totalProjects: data.platform.totalProjects,
+            activeProjects: data.platform.activeProjects,
+            totalTasks: data.platform.totalTasks,
+            completedTasks: data.platform.completedTasks,
+            inProgressTasks: data.platform.inProgressTasks,
+            overdueTasksGlobal: data.platform.overdueTasksGlobal,
+            userGrowthRate: data.platform.userGrowthRate,
+            taskCompletionRate: data.platform.taskCompletionRate,
+            projectActivityRate: data.platform.projectActivityRate,
+            recentActivity: data.platform.recentActivity
+          },
+          userStatus: {
+            projects: data.userStatus.projects,
+            tasks: data.userStatus.tasks,
+            completedTasks: data.userStatus.completedTasks,
+            overdueTasks: data.userStatus.overdueTasks,
+            recentProjects: data.userStatus.recentProjects,
+            totalEvents: data.userStatus.totalEvents,
+            upcomingEvents: data.userStatus.upcomingEvents,
+            unreadNotifications: data.userStatus.unreadNotifications,
+            accountHealth: data.userStatus.accountHealth,
+            taskCompletionRate: data.userStatus.taskCompletionRate,
+            overdueRate: data.userStatus.overdueRate
+          },
+          alerts: data.alerts || [],
+          metrics: data.metrics,
+          timestamp: data.timestamp
+        });        console.log('✅ System status data loaded:', data);
+      } else {
+        console.log('⚠️ System status response format unexpected:', response.data);
+      }
+    } catch (error) {
+      console.error('❌ Error fetching system status data:', error);
+      console.error('❌ Error details:', {
+        message: error.message,
+        status: error.response?.status,
+        statusText: error.response?.statusText,
+        data: error.response?.data
+      });
+      // Set fallback data
+      setSystemStatusData({
+        systemHealth: 'unknown',
+        healthScore: 0,
+        platform: {
+          totalUsers: 0,
+          activeUsers: 0,
+          totalProjects: 0,
+          activeProjects: 0,
+          totalTasks: 0,
+          completedTasks: 0,
+          inProgressTasks: 0,
+          overdueTasksGlobal: 0,
+          userGrowthRate: 0,
+          taskCompletionRate: 0,
+          projectActivityRate: 0,
+          recentActivity: {
+            newUsers: 0,
+            newProjects: 0,
+            completedTasks: 0,
+            errorNotifications: 0
+          }
+        },
+        userStatus: {
+          projects: 0,
+          tasks: 0,
+          completedTasks: 0,
+          overdueTasks: 0,
+          recentProjects: 0,
+          totalEvents: 0,
+          upcomingEvents: 0,
+          unreadNotifications: 0,
+          accountHealth: 'unknown',
+          taskCompletionRate: 0,
+          overdueRate: 0
+        },
+        alerts: [],
+        metrics: {
+          errorRate: 0,
+          errorNotifications: 0,
+          totalNotifications: 0,
+          unreadNotifications: 0,
+          healthScore: 0,
+          lastUpdated: new Date().toISOString()
+        },
+        timestamp: new Date().toISOString()
+      });
+    }
+  };
+
   // Combined data fetching function
   const fetchAnalyticsData = async () => {
     try {
@@ -282,7 +877,15 @@ const Analytics = () => {
       // Fetch both datasets in parallel
       await Promise.all([
         fetchSessionStats(),
-        fetchPerformanceData()
+        fetchPerformanceData(),
+        fetchDeveloperMetrics(),
+        fetchChartsData(),
+        fetchProjectHealthData(),
+        fetchPerformanceMetricsData(),
+        fetchCodeQualityData(),
+        fetchUserEngagementData(),
+        fetchFilterOptions(),
+        fetchSystemStatusData()
       ]);
       
       console.log('✅ All analytics data loaded successfully');
@@ -401,8 +1004,7 @@ const Analytics = () => {
       </motion.div>
 
       {/* Filter Controls */}
-      <motion.div className="analytics-filters-section" variants={itemVariants}>
-        <FilterControls
+      <motion.div className="analytics-filters-section" variants={itemVariants}>        <FilterControls
           selectedTimeRange={selectedTimeRange}
           setSelectedTimeRange={setSelectedTimeRange}
           selectedProject={selectedProject}
@@ -412,6 +1014,7 @@ const Analytics = () => {
           refreshRate={refreshRate}
           setRefreshRate={setRefreshRate}
           settingsConfig={settingsConfig}
+          filterOptions={filterOptions}
         />
       </motion.div>      {/* KPI Cards Section */}
       <motion.div className="analytics-kpi-section" variants={itemVariants}>
@@ -421,6 +1024,8 @@ const Analytics = () => {
           settingsConfig={settingsConfig}
           sessionStats={sessionStats}
           performanceData={performanceData}
+          developerMetrics={developerMetrics}
+          chartsData={chartsData}
           isLoading={dataLoading}
         />
       </motion.div>
@@ -428,20 +1033,23 @@ const Analytics = () => {
       {/* Main Charts Section */}
       <motion.div className="analytics-charts-section" variants={itemVariants}>
         <div className="analytics-charts-grid">
-          <div className="analytics-chart-primary">
-            <RealTimeCharts
+          <div className="analytics-chart-primary">            <RealTimeCharts
               timeRange={selectedTimeRange}
               project={selectedProject}
               metrics={selectedMetrics}
               settingsConfig={settingsConfig}
+              chartsData={chartsData}
+              developerMetrics={developerMetrics}
+              isLoading={dataLoading}
             />
           </div>
-          
-          <div className="analytics-chart-secondary">
+            <div className="analytics-chart-secondary">
             <ProjectHealthDashboard
               timeRange={selectedTimeRange}
               project={selectedProject}
               settingsConfig={settingsConfig}
+              projectHealthData={projectHealthData}
+              isLoading={dataLoading}
             />
           </div>
         </div>
@@ -455,37 +1063,57 @@ const Analytics = () => {
               project={selectedProject}
               settingsConfig={settingsConfig}
               performanceData={performanceData}
+              performanceMetricsData={performanceMetricsData}
               isLoading={dataLoading}
             />
           </div>
-          
-          <div className="analytics-performance-item">
+            <div className="analytics-performance-item">
             <CodeQualityInsights
               timeRange={selectedTimeRange}
               project={selectedProject}
               settingsConfig={settingsConfig}
+              codeQualityData={codeQualityData}
+              isLoading={dataLoading}
             />
           </div>
         </div>
       </motion.div>      {/* User Engagement Section */}
-      <motion.div className="analytics-engagement-section" variants={itemVariants}>
-        <UserEngagementAnalytics
+      <motion.div className="analytics-engagement-section" variants={itemVariants}>        <UserEngagementAnalytics
           timeRange={selectedTimeRange}
           project={selectedProject}
           settingsConfig={settingsConfig}
+          userEngagementData={userEngagementData}
           sessionStats={sessionStats}
           performanceData={performanceData}
+          isLoading={dataLoading}
+        />
+      </motion.div>
+
+      {/* System Status Section */}
+      <motion.div className="analytics-system-status-section" variants={itemVariants}>
+        <SystemStatus
+          timeRange={selectedTimeRange}
+          settingsConfig={settingsConfig}
+          systemStatusData={systemStatusData}
           isLoading={dataLoading}
         />
       </motion.div>{/* Enhanced Status Bar */}
       <motion.div 
         className={`analytics-status-bar ${sidebarCollapsed ? 'sidebar-collapsed' : ''}`}
         variants={itemVariants}
-      >
-        <div className="analytics-status-left">
-          <div className="analytics-status-indicator analytics-status-healthy">
+      >        <div className="analytics-status-left">
+          <div className={`analytics-status-indicator ${
+            systemStatusData?.systemHealth === 'excellent' || systemStatusData?.systemHealth === 'good' 
+              ? 'analytics-status-healthy' 
+              : systemStatusData?.systemHealth === 'fair' || systemStatusData?.systemHealth === 'warning'
+              ? 'analytics-status-warning'
+              : 'analytics-status-error'
+          }`}>
             <div className="analytics-status-dot"></div>
-            System Health: Excellent
+            System Health: {systemStatusData?.systemHealth ? 
+              systemStatusData.systemHealth.charAt(0).toUpperCase() + systemStatusData.systemHealth.slice(1) : 
+              'Unknown'
+            } {systemStatusData?.healthScore ? `(${systemStatusData.healthScore}/100)` : ''}
           </div>
           <div className="analytics-performance-indicator">
             <FaClock />

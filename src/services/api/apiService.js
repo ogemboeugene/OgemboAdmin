@@ -1033,6 +1033,57 @@ const apiService = {
     // Get users by role
     getByRole: (role) => apiClient.get(`/users/role/${role}`),
   },
+  
+  // Analytics services
+  analytics: {
+    // Get developer metrics dashboard
+    getDeveloperMetrics: (params = {}) => {
+      console.log('📊 Fetching developer metrics:', params);
+      return apiClient.get('/analytics/developer-metrics', { params });
+    },
+    
+    // Get real-time charts data
+    getChartsData: (params = {}) => {
+      console.log('📊 Fetching charts data:', params);
+      return apiClient.get('/analytics/charts-data', { params });
+    },
+    
+    // Get project health dashboard
+    getProjectHealth: () => {
+      console.log('📊 Fetching project health data');
+      return apiClient.get('/analytics/project-health');
+    },
+    
+    // Get performance metrics
+    getPerformanceMetrics: (params = {}) => {
+      console.log('📊 Fetching performance metrics:', params);
+      return apiClient.get('/analytics/performance-metrics', { params });
+    },
+    
+    // Get code quality insights
+    getCodeQuality: () => {
+      console.log('📊 Fetching code quality data');
+      return apiClient.get('/analytics/code-quality');
+    },
+
+    // Get user engagement analytics
+    getUserEngagement: (params = {}) => {
+      console.log('📊 Fetching user engagement data:', params);
+      return apiClient.get('/analytics/user-engagement', { params });
+    },
+
+    // Get filter options for analytics
+    getFilterOptions: () => {
+      console.log('📊 Fetching analytics filter options');
+      return apiClient.get('/analytics/filter-options');
+    },
+
+    // Get system status metrics
+    getSystemStatus: () => {
+      console.log('📊 Fetching system status data');
+      return apiClient.get('/analytics/system-status');
+    },
+  },
 };
 
 export default apiService;

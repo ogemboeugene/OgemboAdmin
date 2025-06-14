@@ -474,6 +474,32 @@
   box-shadow: var(--shadow-xl);
 }
 
+/* System Status Section */
+.analytics-system-status-section {
+  margin-bottom: 2rem;
+  background: rgba(255, 255, 255, 0.1);
+  backdrop-filter: blur(20px);
+  border-radius: var(--border-radius-xl);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  transition: var(--transition);
+}
+
+.analytics-dark .analytics-system-status-section {
+  background: rgba(0, 0, 0, 0.3);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.analytics-light .analytics-system-status-section {
+  background: rgba(255, 255, 255, 0.95);
+  border: 1px solid rgba(0, 0, 0, 0.15);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+}
+
+.analytics-system-status-section:hover {
+  transform: translateY(-4px);
+  box-shadow: var(--shadow-xl);
+}
+
 /* Status Bar */
 .analytics-status-bar {
   position: fixed;
@@ -2579,6 +2605,12 @@
   background: linear-gradient(135deg, rgba(245, 158, 11, 0.1) 0%, rgba(251, 191, 36, 0.05) 100%);
   color: #f59e0b;
   border-color: rgba(245, 158, 11, 0.2);
+}
+
+.analytics-status-error {
+  background: linear-gradient(135deg, rgba(239, 68, 68, 0.1) 0%, rgba(220, 38, 38, 0.05) 100%);
+  color: #ef4444;
+  border-color: rgba(239, 68, 68, 0.2);
 }
 
 .analytics-status-critical {

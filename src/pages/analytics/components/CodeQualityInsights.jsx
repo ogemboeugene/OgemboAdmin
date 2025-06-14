@@ -12,7 +12,7 @@ import {
   FaSync
 } from 'react-icons/fa';
 
-const CodeQualityInsights = ({ timeRange, project, settingsConfig }) => {
+const CodeQualityInsights = ({ timeRange, project, settingsConfig, codeQualityData, isLoading: dataLoading }) => {
   const [qualityData, setQualityData] = useState({
     overallGrade: 'A',
     maintainabilityIndex: 78,
@@ -23,83 +23,193 @@ const CodeQualityInsights = ({ timeRange, project, settingsConfig }) => {
     testability: 85,
     reliability: 92
   });
-
   const [insights, setInsights] = useState([]);
   const [recommendations, setRecommendations] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const [overviewData, setOverviewData] = useState(null);
+  const [technologyData, setTechnologyData] = useState(null);
+  const [repositoriesData, setRepositoriesData] = useState([]);
+  const [loading, setLoading] = useState(true);useEffect(() => {
+    // Use real code quality data if available, otherwise simulate
+    setTimeout(() => {      if (codeQualityData && codeQualityData.codeQuality && 
+          (codeQualityData.codeQuality.maintainabilityIndex > 0 || 
+           codeQualityData.codeQuality.testCoverage > 0)) {
+        // Map real code quality data to component state
+        const maintainabilityIndex = codeQualityData.codeQuality?.maintainabilityIndex || 0;
+        const testCoverage = codeQualityData.codeQuality?.testCoverage || 0;
+        const technicalDebt = codeQualityData.codeQuality?.technicalDebt || 0;
+        const codeComplexity = codeQualityData.codeQuality?.codeComplexity || 0;        const duplicateCode = codeQualityData.codeQuality?.duplicateCodePercentage || 0;
+        
+        // Calculate overall grade based on metrics
+        const averageScore = (maintainabilityIndex + testCoverage) / 2;
+        let overallGrade = 'F';
+        if (averageScore >= 90) overallGrade = 'A';
+        else if (averageScore >= 80) overallGrade = 'B';
+        else if (averageScore >= 70) overallGrade = 'C';
+        else if (averageScore >= 60) overallGrade = 'D';
+        
+        setQualityData({
+          overallGrade,
+          maintainabilityIndex,
+          technicalDebt,
+          codeSmells: Math.floor(technicalDebt * 5), // Estimate code smells
+          duplications: duplicateCode,
+          complexity: codeComplexity > 50 ? 'High' : codeComplexity > 25 ? 'Medium' : 'Low',
+          testability: testCoverage,
+          reliability: Math.min(100, maintainabilityIndex + 10)
+        });
 
-  useEffect(() => {
-    // Simulate fetching quality data
-    setTimeout(() => {
-      setInsights([
-        {
-          type: 'improvement',
-          icon: FaLightbulb,
-          title: 'Refactoring Opportunity',
-          description: 'UserService.js has high cyclomatic complexity',
-          priority: 'medium',
-          effort: '2-3 hours',
-          impact: 'maintainability'
-        },
-        {
-          type: 'warning',
-          icon: FaExclamationTriangle,
-          title: 'Code Duplication Detected',
-          description: '15 duplicate code blocks found across components',
-          priority: 'high',
-          effort: '4-6 hours',
-          impact: 'maintainability'
-        },
-        {
-          type: 'success',
-          icon: FaCheckCircle,
-          title: 'Test Coverage Improved',
-          description: 'Test coverage increased by 8% this week',
-          priority: 'info',
-          effort: 'completed',
-          impact: 'quality'
-        },
-        {
-          type: 'bug',
-          icon: FaBug,
-          title: 'Potential Memory Leak',
-          description: 'Event listeners not properly cleaned up in useEffect',
-          priority: 'high',
-          effort: '1-2 hours',
-          impact: 'performance'
+        // Generate insights based on real data
+        const newInsights = [];
+        
+        if (testCoverage < 70) {
+          newInsights.push({
+            type: 'warning',
+            icon: FaExclamationTriangle,
+            title: 'Low Test Coverage',
+            description: `Test coverage is ${testCoverage}%, below recommended 70%`,
+            priority: 'high',
+            effort: '4-8 hours',
+            impact: 'reliability'
+          });
         }
-      ]);
-
-      setRecommendations([
-        {
-          title: 'Extract Common Utility Functions',
-          description: 'Create shared utility functions to reduce code duplication',
-          impact: 'High',
-          effort: 'Medium'
-        },
-        {
-          title: 'Implement Error Boundaries',
-          description: 'Add React error boundaries for better error handling',
-          impact: 'Medium',
-          effort: 'Low'
-        },
-        {
-          title: 'Add Type Definitions',
-          description: 'Convert JavaScript files to TypeScript for better type safety',
-          impact: 'High',
-          effort: 'High'
-        },
-        {
-          title: 'Optimize Bundle Size',
-          description: 'Remove unused dependencies and implement tree shaking',
-          impact: 'Medium',
-          effort: 'Medium'
+        
+        if (duplicateCode > 5) {
+          newInsights.push({
+            type: 'warning',
+            icon: FaCode,
+            title: 'Code Duplication Detected',
+            description: `${duplicateCode}% duplicate code found across the codebase`,
+            priority: 'medium',
+            effort: '3-5 hours',
+            impact: 'maintainability'
+          });
         }
-      ]);
+        
+        if (codeComplexity > 30) {
+          newInsights.push({
+            type: 'improvement',
+            icon: FaLightbulb,
+            title: 'High Code Complexity',
+            description: `Code complexity score is ${codeComplexity}, consider refactoring`,
+            priority: 'medium',
+            effort: '2-4 hours',
+            impact: 'maintainability'
+          });
+        }
+        
+        if (maintainabilityIndex > 80) {
+          newInsights.push({
+            type: 'success',
+            icon: FaCheckCircle,
+            title: 'Excellent Maintainability',
+            description: `Maintainability index is ${maintainabilityIndex}, well done!`,
+            priority: 'low',
+            effort: '0 hours',
+            impact: 'positive'
+          });
+        }
+        
+        setInsights(newInsights);
 
-      setLoading(false);
+        // Map overview data
+        if (codeQualityData.overview) {
+          setOverviewData({
+            totalRepositories: codeQualityData.overview.totalRepositories,
+            totalStars: codeQualityData.overview.totalStars,
+            totalForks: codeQualityData.overview.totalForks,
+            avgStarsPerRepo: codeQualityData.overview.avgStarsPerRepo,
+            primaryLanguages: codeQualityData.overview.primaryLanguages,
+            technologiesUsed: codeQualityData.overview.technologiesUsed
+          });
+        }
+
+        // Map technology data
+        if (codeQualityData.technology) {
+          setTechnologyData({
+            topTechnologies: codeQualityData.technology.topTechnologies || [],
+            languageDistribution: codeQualityData.technology.languageDistribution || [],
+            diversityIndex: codeQualityData.technology.diversityIndex
+          });
+        }
+
+        // Map repositories data
+        setRepositoriesData(codeQualityData.repositories || []);
+
+        // Map real recommendations
+        const realRecommendations = codeQualityData.recommendations?.map(rec => ({
+          id: rec.type,
+          title: rec.title,
+          description: rec.description,
+          priority: rec.priority,
+          tags: [rec.type],
+          icon: rec.type === 'testing' ? FaCheckCircle : FaLightbulb,
+          estimatedTime: rec.priority === 'high' ? '4-6 hours' : '2-3 hours',
+          impact: rec.priority === 'high' ? 'high' : rec.priority === 'medium' ? 'medium' : 'low',
+          effort: rec.priority === 'high' ? '4-6 hours' : '2-3 hours'
+        })) || [];
+          // Add default recommendations if none exist
+        if (realRecommendations.length === 0) {
+          realRecommendations.push({
+            id: 'maintain',
+            title: 'Maintain Current Quality',
+            description: 'Continue following current development practices',
+            priority: 'low',
+            tags: ['quality'],
+            icon: FaCheckCircle,
+            estimatedTime: 'Ongoing',
+            impact: 'low',
+            effort: 'Ongoing'
+          });
+        }
+        
+        setRecommendations(realRecommendations);      } else {
+        // Fallback to simulated data
+        setQualityData({
+          overallGrade: 'A',
+          maintainabilityIndex: 78,
+          technicalDebt: 2.5,
+          codeSmells: 12,
+          duplications: 3.2,
+          complexity: 'Medium',
+          testability: 85,
+          reliability: 92
+        });
+
+        setInsights([
+          {
+            type: 'improvement',
+            icon: FaLightbulb,
+            title: 'Refactoring Opportunity',
+            description: 'UserService.js has high cyclomatic complexity',
+            priority: 'medium',
+            effort: '2-3 hours',
+            impact: 'maintainability'
+          },
+          {
+            type: 'warning',
+            icon: FaExclamationTriangle,
+            title: 'Code Duplication Detected',
+            description: '15 duplicate code blocks found across components',
+            priority: 'high',
+            effort: '4-6 hours',
+            impact: 'maintainability'
+          }
+        ]);        setRecommendations([
+          {
+            id: 1,
+            title: 'Implement unit tests for UserService',
+            description: 'Add comprehensive test coverage for authentication logic',
+            priority: 'high',
+            tags: ['testing', 'quality'],
+            icon: FaCheckCircle,
+            estimatedTime: '4-6 hours',
+            impact: 'high',
+            effort: '4-6 hours'
+          }
+        ]);
+      }      setLoading(false);
     }, 700);
-  }, [timeRange, project]);
+  }, [timeRange, project, codeQualityData]);
 
   const getGradeColor = (grade) => {
     switch (grade) {
@@ -121,8 +231,8 @@ const CodeQualityInsights = ({ timeRange, project, settingsConfig }) => {
       default: return '#6b7280';
     }
   };
-
   const getImpactColor = (impact) => {
+    if (!impact || typeof impact !== 'string') return '#6b7280';
     switch (impact.toLowerCase()) {
       case 'high': return '#ef4444';
       case 'medium': return '#f59e0b';
@@ -229,6 +339,73 @@ const CodeQualityInsights = ({ timeRange, project, settingsConfig }) => {
           </div>
         </div>
 
+        {/* Technology Stack Overview */}
+        {technologyData && technologyData.topTechnologies && technologyData.topTechnologies.length > 0 && (
+          <div className="analytics-quality-technology">
+            <h4 className="analytics-quality-section-title">Technology Stack</h4>
+            <div className="analytics-quality-tech-grid">
+              {technologyData.topTechnologies.slice(0, 6).map((tech, index) => (
+                <motion.div
+                  key={tech.name}
+                  className="analytics-quality-tech-item"
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: index * 0.1, duration: 0.4 }}
+                >
+                  <div className="analytics-quality-tech-name">{tech.name}</div>
+                  <div className="analytics-quality-tech-usage">
+                    <div className="analytics-quality-tech-bar">
+                      <div 
+                        className="analytics-quality-tech-bar-fill"
+                        style={{ width: `${tech.percentage}%` }}
+                      />
+                    </div>
+                    <span className="analytics-quality-tech-percentage">{tech.percentage}%</span>
+                  </div>
+                  <div className="analytics-quality-tech-projects">{tech.projectCount} projects</div>
+                </motion.div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Repository Overview */}
+        {overviewData && (
+          <div className="analytics-quality-overview">
+            <h4 className="analytics-quality-section-title">Repository Overview</h4>
+            <div className="analytics-quality-overview-stats">
+              <div className="analytics-quality-overview-stat">
+                <FaCode className="analytics-quality-overview-icon" />
+                <div className="analytics-quality-overview-stat-content">
+                  <div className="analytics-quality-overview-stat-value">{overviewData.totalRepositories}</div>
+                  <div className="analytics-quality-overview-stat-label">Repositories</div>
+                </div>
+              </div>
+              <div className="analytics-quality-overview-stat">
+                <FaEye className="analytics-quality-overview-icon" />
+                <div className="analytics-quality-overview-stat-content">
+                  <div className="analytics-quality-overview-stat-value">{overviewData.totalStars}</div>
+                  <div className="analytics-quality-overview-stat-label">Total Stars</div>
+                </div>
+              </div>
+              <div className="analytics-quality-overview-stat">
+                <FaSync className="analytics-quality-overview-icon" />
+                <div className="analytics-quality-overview-stat-content">
+                  <div className="analytics-quality-overview-stat-value">{overviewData.totalForks}</div>
+                  <div className="analytics-quality-overview-stat-label">Total Forks</div>
+                </div>
+              </div>
+              <div className="analytics-quality-overview-stat">
+                <FaChartLine className="analytics-quality-overview-icon" />
+                <div className="analytics-quality-overview-stat-content">
+                  <div className="analytics-quality-overview-stat-value">{overviewData.avgStarsPerRepo}</div>
+                  <div className="analytics-quality-overview-stat-label">Avg Stars/Repo</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Issues & Insights */}
         <div className="analytics-quality-insights">
           <h4 className="analytics-quality-section-title">Quality Insights</h4>
@@ -301,16 +478,15 @@ const CodeQualityInsights = ({ timeRange, project, settingsConfig }) => {
                 <div className="analytics-quality-recommendation-description">
                   {rec.description}
                 </div>
-                
-                <div className="analytics-quality-recommendation-tags">
+                  <div className="analytics-quality-recommendation-tags">
                   <span 
                     className="analytics-quality-recommendation-tag"
                     style={{ color: getImpactColor(rec.impact) }}
                   >
-                    Impact: {rec.impact}
+                    Impact: {rec.impact || 'Unknown'}
                   </span>
                   <span className="analytics-quality-recommendation-tag">
-                    Effort: {rec.effort}
+                    Effort: {rec.effort || 'TBD'}
                   </span>
                 </div>
               </motion.div>

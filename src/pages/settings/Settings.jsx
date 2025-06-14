@@ -2,7 +2,16 @@ import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Link } from 'react-router-dom';
 import apiService from '../../services/api/apiService';
+import sessionTracker from '../../services/sessionTracker';
 import { formatDate, formatFileSize } from '../../utils/formatters';
+import { 
+  validateForAPI, 
+  transformForBackend, 
+  detectChanges, 
+  formatErrorMessages,
+  updateSettings,
+  createSettingsChangeDetector
+} from '../../utils/settingsValidation';
 import { 
   FaCog, 
   FaUser, 
@@ -62,6 +71,25 @@ const Settings = () => {
   const { user } = useAuth();
   const { darkMode, setDarkMode, primaryColor, setPrimaryColor, fontSize, setFontSize } = useTheme();
   
+  // Helper functions for date format mapping
+  const mapServerDateFormatToUI = (serverFormat) => {
+    const formatMap = {
+      'MM/DD/YYYY': 'mdy',
+      'DD/MM/YYYY': 'dmy', 
+      'YYYY-MM-DD': 'ymd'
+    };
+    return formatMap[serverFormat] || 'mdy'; // default to mdy if not found
+  };
+  
+  const mapUIDateFormatToServer = (uiFormat) => {
+    const formatMap = {
+      'mdy': 'MM/DD/YYYY',
+      'dmy': 'DD/MM/YYYY',
+      'ymd': 'YYYY-MM-DD'
+    };
+    return formatMap[uiFormat] || 'MM/DD/YYYY'; // default to MM/DD/YYYY if not found
+  };
+  
   // State for active tab
   const [activeTab, setActiveTab] = useState('general');
   
@@ -96,7 +124,7 @@ const Settings = () => {
   const [githubUsername, setGithubUsername] = useState('');
   const [preferredStack, setPreferredStack] = useState([]);
   const [stackInput, setStackInput] = useState('');
-  const [devEnvironment, setDevEnvironment] = useState('vscode');
+  const [devEnvironment, setDevEnvironment] = useState('');
   const [codeSnippetTheme, setCodeSnippetTheme] = useState('monokai');
   const [codeEditor, setCodeEditor] = useState(''); // Full editor name
   
@@ -104,16 +132,15 @@ const Settings = () => {
   const [language, setLanguage] = useState('en');
   const [timezone, setTimezone] = useState('Africa/Nairobi');
   const [dateFormat, setDateFormat] = useState('mdy');
-  
-  // State for API settings
+    // State for API settings
   const [apiKey, setApiKey] = useState('');
   const [showApiKey, setShowApiKey] = useState(false);
-  const [webhookUrl, setWebhookUrl] = useState('');
-  const [webhookEvents, setWebhookEvents] = useState({
-    project: true,
-    profile: true,
-    contact: true
-  });
+  const [webhookUrl, setWebhookUrl] = useState('');  const [webhookEvents, setWebhookEvents] = useState([]);
+
+  // Debug webhook events changes
+  useEffect(() => {
+    console.log('🔗 Webhook events state changed:', webhookEvents);
+  }, [webhookEvents]);
   
   // State for portfolio settings
   const [portfolioVisibility, setPortfolioVisibility] = useState('public');
@@ -152,7 +179,7 @@ const Settings = () => {
   const [showPhone, setShowPhone] = useState(true);
   const [profilePublic, setProfilePublic] = useState(true);
   const [allowSearchEngineIndexing, setAllowSearchEngineIndexing] = useState(true);
-    // State for security settings
+  // State for security settings
   const [twoFactorEnabled, setTwoFactorEnabled] = useState(false);
   const [sessionTimeout, setSessionTimeout] = useState(30); // minutes
   const [loginNotifications, setLoginNotifications] = useState(true);
@@ -160,6 +187,16 @@ const Settings = () => {
   const [activeApiKeysCount, setActiveApiKeysCount] = useState(0);
   const [activeSessionsCount, setActiveSessionsCount] = useState(0);
   const [lastActiveApiKey, setLastActiveApiKey] = useState(null);
+  
+  // State for session management
+  const [activeSessions, setActiveSessions] = useState([]);
+  const [loadingSessions, setLoadingSessions] = useState(false);
+  const [sessionStats, setSessionStats] = useState({
+    totalSessions: 0,
+    activeSessions: 0,
+    deviceBreakdown: {},
+    topLocations: []
+  });
   
   // State for appearance settings (additional)
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
@@ -175,11 +212,15 @@ const Settings = () => {
   const [projects, setProjects] = useState([]);
   const [featuredProjects, setFeaturedProjects] = useState([]);
   const [loadingProjects, setLoadingProjects] = useState(false);
-  
   // State for saving changes
   const [isSaving, setIsSaving] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
   const [saveError, setSaveError] = useState(null);
+  
+  // State for tracking initial settings for change detection
+  const [initialSettings, setInitialSettings] = useState(null);
+  const [changeDetector, setChangeDetector] = useState(null);
+  const [hasChanges, setHasChanges] = useState(false);
   
   // Refs for scrolling to sections
   const generalRef = useRef(null);
@@ -196,16 +237,27 @@ const Settings = () => {
     const loadSettings = async () => {
       setIsLoading(true);
       setDataError(null);
-      
-      try {
+        try {
+        // Track if server provides development environment value
+        let serverProvidedDevEnvironment = false;
+        
         // Fetch both profile and settings data in parallel
         const [profileResponse, settingsResponse] = await Promise.all([
           apiService.profile.get(),
           apiService.settings.get()
-        ]);
-
-        console.log('Profile response:', profileResponse);
-        console.log('Settings response:', settingsResponse);        // Handle profile data
+        ]);        console.log('Profile response:', profileResponse);
+        console.log('Settings response:', settingsResponse);
+        
+        // Debug: Log the actual settings data structure
+        if (settingsResponse.data && settingsResponse.data.success) {
+          console.log('🔍 Settings data structure:', settingsResponse.data.data);
+          if (settingsResponse.data.data && settingsResponse.data.data.settings) {
+            console.log('🔍 Settings object:', settingsResponse.data.data.settings);
+            if (settingsResponse.data.data.settings.developer) {
+              console.log('🔍 Developer settings:', settingsResponse.data.data.settings.developer);
+            }
+          }
+        }// Handle profile data
         if (profileResponse.data && profileResponse.data.success) {
           const responseData = profileResponse.data.data;
           const userData = responseData.user;
@@ -324,8 +376,7 @@ const Settings = () => {
               }
               if (settings.security.active_api_keys !== undefined) {
                 setActiveApiKeysCount(settings.security.active_api_keys);
-              }
-              if (settings.security.active_sessions_count !== undefined) {
+              }              if (settings.security.active_sessions_count !== undefined) {
                 setActiveSessionsCount(settings.security.active_sessions_count);
               }
               if (settings.security.last_active_api_key) {
@@ -345,7 +396,7 @@ const Settings = () => {
                 setTimezone(settings.localization.timezone);
               }
               if (settings.localization.date_format) {
-                setDateFormat(settings.localization.date_format);
+                setDateFormat(mapServerDateFormatToUI(settings.localization.date_format));
               }
               if (settings.localization.time_format) {
                 setTimeFormat(settings.localization.time_format);
@@ -394,34 +445,49 @@ const Settings = () => {
               setPortfolioVisibility(settings.profilePublic === 1 ? 'public' : 'private');
               setShowCodeSamples(settings.showEmail === 1);
               setShowProjectMetrics(settings.showPhone === 1);
-            }              // Developer settings
+            }            // Developer settings
             if (settings.developer) {
               if (settings.developer.github_username) {
                 setGithubUsername(settings.developer.github_username);
               }
               if (settings.developer.development_environment) {
+                console.log('🚀 Setting devEnvironment from server:', settings.developer.development_environment);
                 setDevEnvironment(settings.developer.development_environment);
+                serverProvidedDevEnvironment = true;
               }
               if (settings.developer.code_editor) {
                 setCodeEditor(settings.developer.code_editor);
               }
               if (settings.developer.code_snippet_theme) {
                 setCodeSnippetTheme(settings.developer.code_snippet_theme);
-              }
-              if (settings.developer.webhook_url) {
+              }              if (settings.developer.webhook_url) {
                 setWebhookUrl(settings.developer.webhook_url);
               }
               if (settings.developer.webhook_events) {
-                setWebhookEvents(settings.developer.webhook_events);
+                console.log('🔗 Loading webhook events from server:', settings.developer.webhook_events);
+                // Handle both old object format and new array format
+                if (Array.isArray(settings.developer.webhook_events)) {
+                  console.log('🔗 Setting webhook events (array format):', settings.developer.webhook_events);
+                  setWebhookEvents(settings.developer.webhook_events);
+                } else if (typeof settings.developer.webhook_events === 'object') {
+                  // Convert old object format to new array format
+                  const selectedEvents = [];
+                  if (settings.developer.webhook_events.project) selectedEvents.push('project_updates');
+                  if (settings.developer.webhook_events.profile) selectedEvents.push('profile_changes');
+                  if (settings.developer.webhook_events.contact) selectedEvents.push('contact_form_submissions');
+                  console.log('🔗 Converted webhook events (object to array):', selectedEvents);
+                  setWebhookEvents(selectedEvents);
+                }
               }
             }
-            
-            // Legacy developer settings fallback
+              // Legacy developer settings fallback
             if (settings.githubUsername) {
               setGithubUsername(settings.githubUsername);
             }
             if (settings.developmentEnvironment) {
+              console.log('🚀 Setting devEnvironment from legacy field:', settings.developmentEnvironment);
               setDevEnvironment(settings.developmentEnvironment);
+              serverProvidedDevEnvironment = true;
             }
             if (settings.codeSnippetTheme) {
               setCodeSnippetTheme(settings.codeSnippetTheme);
@@ -532,8 +598,7 @@ const Settings = () => {
                 setAllowSearchEngineIndexing(settings.privacy.allow_search_engine_indexing === 1);
               }
             }
-            
-            // Handle nested security settings
+              // Handle nested security settings
             if (settings.security) {
               if (settings.security.two_factor_enabled !== undefined) {
                 setTwoFactorEnabled(settings.security.two_factor_enabled === 1);
@@ -546,6 +611,15 @@ const Settings = () => {
               }
               if (settings.security.api_keys_count !== undefined) {
                 setApiKeysCount(settings.security.api_keys_count);
+              }
+              if (settings.security.active_api_keys !== undefined) {
+                setActiveApiKeysCount(settings.security.active_api_keys);
+              }
+              if (settings.security.active_sessions_count !== undefined) {
+                setActiveSessionsCount(settings.security.active_sessions_count);
+              }
+              if (settings.security.last_active_api_key) {
+                setLastActiveApiKey(settings.security.last_active_api_key);
               }
               if (settings.security.api_key) {
                 setApiKey(settings.security.api_key);
@@ -561,7 +635,7 @@ const Settings = () => {
                 setTimezone(settings.localization.timezone);
               }
               if (settings.localization.date_format) {
-                setDateFormat(settings.localization.date_format);
+                setDateFormat(mapServerDateFormatToUI(settings.localization.date_format));
               }
               if (settings.localization.time_format) {
                 setTimeFormat(settings.localization.time_format);
@@ -581,6 +655,38 @@ const Settings = () => {
               }
               if (settings.backup.last_backup) {
                 setLastBackup(settings.backup.last_backup);
+              }            }
+            
+            // Handle nested developer settings
+            if (settings.developer) {
+              if (settings.developer.github_username) {
+                setGithubUsername(settings.developer.github_username);
+              }
+              if (settings.developer.development_environment) {
+                console.log('🚀 Setting devEnvironment from settingsResponse:', settings.developer.development_environment);
+                setDevEnvironment(settings.developer.development_environment);
+                serverProvidedDevEnvironment = true;
+              }
+              if (settings.developer.code_editor) {
+                setCodeEditor(settings.developer.code_editor);
+              }
+              if (settings.developer.code_snippet_theme) {
+                setCodeSnippetTheme(settings.developer.code_snippet_theme);
+              }              if (settings.developer.webhook_url) {
+                setWebhookUrl(settings.developer.webhook_url);
+              }
+              if (settings.developer.webhook_events) {
+                // Handle both old object format and new array format
+                if (Array.isArray(settings.developer.webhook_events)) {
+                  setWebhookEvents(settings.developer.webhook_events);
+                } else if (typeof settings.developer.webhook_events === 'object') {
+                  // Convert old object format to new array format
+                  const selectedEvents = [];
+                  if (settings.developer.webhook_events.project) selectedEvents.push('project_updates');
+                  if (settings.developer.webhook_events.profile) selectedEvents.push('profile_changes');
+                  if (settings.developer.webhook_events.contact) selectedEvents.push('contact_form_submissions');
+                  setWebhookEvents(selectedEvents);
+                }
               }
             }
             
@@ -628,7 +734,7 @@ const Settings = () => {
               setWebhookUrl(settings.developer.webhook_url);
             }
           }
-        }// Load additional local settings not covered by API
+        }        // Load additional local settings not covered by API
         const savedSettings = localStorage.getItem('developerSettings');
         if (savedSettings) {
           try {
@@ -637,13 +743,20 @@ const Settings = () => {
             // Only use local settings for values not provided by API
             if (!codeSnippetTheme) {
               setCodeSnippetTheme(parsedSettings.codeSnippetTheme || 'vs-code');
-            }
-            if (!socialDisplay) {
+            }            if (!socialDisplay) {
               setSocialDisplay(parsedSettings.socialDisplay || 'all');
-            }
+            }            // IMPORTANT: Don't use localStorage devEnvironment anymore since server should be the source of truth
+            // The server provides the correct value, localStorage should not override it
+            console.log('ℹ️ Skipping localStorage devEnvironment check - server value takes precedence');
           } catch (error) {
             console.error('Error parsing saved local settings:', error);
           }
+        }        // Set fallback default for devEnvironment if neither server nor localStorage provided a value
+        if (!serverProvidedDevEnvironment) {
+          console.log('🔧 Setting fallback default devEnvironment to vscode');
+          setDevEnvironment('vscode');
+        } else {
+          console.log('✅ devEnvironment already set from server');
         }
         
       } catch (error) {
@@ -661,17 +774,19 @@ const Settings = () => {
             setPortfolioVisibility(parsedSettings.portfolioVisibility || 'public');
             setShowCodeSamples(parsedSettings.showCodeSamples !== undefined ? parsedSettings.showCodeSamples : true);
             setShowProjectMetrics(parsedSettings.showProjectMetrics !== undefined ? parsedSettings.showProjectMetrics : true);
-            setAllowProjectComments(parsedSettings.allowProjectComments !== undefined ? parsedSettings.allowProjectComments : true);
-            
-            if (parsedSettings.preferredStack) {
+            setAllowProjectComments(parsedSettings.allowProjectComments !== undefined ? parsedSettings.allowProjectComments : true);            if (parsedSettings.preferredStack) {
               setPreferredStack(parsedSettings.preferredStack);
-            }
-            if (parsedSettings.devEnvironment) {
-              setDevEnvironment(parsedSettings.devEnvironment);
-            }
+            }            // In error fallback, we won't use localStorage devEnvironment anymore
+            // The server should be the source of truth for devEnvironment
+            console.log('⚠️ Error fallback: Server failed, but not using localStorage devEnvironment');
           } catch (error) {
             console.error('Error parsing fallback settings:', error);
           }
+        }
+          // Set fallback default for devEnvironment if server didn't provide a value
+        if (!serverProvidedDevEnvironment) {
+          console.log('🔧 Error fallback: Setting default devEnvironment to vscode');
+          setDevEnvironment('vscode');
         }
       } finally {
         setIsLoading(false);
@@ -680,6 +795,261 @@ const Settings = () => {
 
     loadSettings();
   }, [setDarkMode, setPrimaryColor, setFontSize]);
+
+  // Create initial settings snapshot for change detection after data loads
+  useEffect(() => {
+    if (!isLoading && initialSettings === null) {
+      const currentSettings = {
+        // Appearance
+        appearance: {
+          theme: darkMode ? 'dark' : 'light',
+          primary_color: primaryColor,
+          font_size: fontSize,
+          sidebar_collapsed: sidebarCollapsed,
+          animations_enabled: animationsEnabled
+        },
+        // Notifications
+        notifications: {
+          notifications_enabled: notificationsEnabled,
+          email_notifications: emailNotifications,
+          push_notifications: pushNotifications,
+          project_updates: notifyOnProjectUpdate,
+          messages: notifyOnMessage,
+          notification_types: {
+            tasks: notifyOnTasks,
+            calendar: notifyOnCalendar,
+            security: notifyOnSecurity,
+            email_digest: emailDigest,
+            ...notificationTypes
+          },
+          quiet_hours: {
+            enabled: quietHoursEnabled,
+            from: quietHoursFrom,
+            to: quietHoursTo
+          }
+        },
+        // Privacy
+        privacy: {
+          portfolio_visibility: portfolioVisibility,
+          show_code_samples: showCodeSamples,
+          show_project_metrics: showProjectMetrics,
+          allow_project_comments: allowProjectComments,
+          social_display: socialDisplay,
+          show_email: showEmail,
+          show_phone: showPhone,
+          profile_public: profilePublic,
+          allow_search_engine_indexing: allowSearchEngineIndexing
+        },
+        // Security
+        security: {
+          two_factor_enabled: twoFactorEnabled,
+          session_timeout: sessionTimeout,
+          login_notifications: loginNotifications,
+          api_keys_count: apiKeysCount,
+          active_api_keys: activeApiKeysCount,
+          active_sessions_count: activeSessionsCount,
+          last_active_api_key: lastActiveApiKey,
+          api_key: apiKey
+        },
+        // Localization
+        localization: {
+          language: language,
+          timezone: timezone,
+          date_format: dateFormat,
+          time_format: timeFormat
+        },
+        // Backup
+        backup: {
+          auto_backup: autoBackup,
+          backup_frequency: backupFrequency,
+          backup_location: backupLocation,
+          last_backup: lastBackup,
+          last_backup_url: lastBackupUrl,
+          last_backup_size: lastBackupSize
+        },        // Developer
+        developer: {
+          github_username: githubUsername,
+          development_environment: devEnvironment,
+          webhook_url: webhookUrl,
+          webhook_events: webhookEvents,
+          code_snippet_theme: codeSnippetTheme,
+          code_editor: codeEditor,
+          preferred_tech_stack: preferredStack
+        },
+        // Projects
+        projects: {
+          featured_projects: featuredProjects,
+          default_sort: defaultProjectSort,
+          projects_per_page: projectsPerPage
+        },
+        // Profile
+        profile: {
+          email: email,
+          username: username,
+          first_name: firstName,
+          last_name: lastName,
+          professional_title: professionalTitle,
+          bio: bio,
+          github_profile: githubProfile,
+          linkedin_profile: linkedinProfile,
+          twitter_profile: twitterProfile
+        }
+      };
+        setInitialSettings(currentSettings);
+      setChangeDetector(createSettingsChangeDetector(currentSettings));
+    }
+  }, [isLoading]); // Only run when loading state changes
+
+  // Track if there are any changes to enable/disable save button
+  useEffect(() => {
+    if (changeDetector && initialSettings) {
+      const currentSettings = {
+        // Appearance
+        appearance: {
+          theme: darkMode ? 'dark' : 'light',
+          primary_color: primaryColor,
+          font_size: fontSize,
+          sidebar_collapsed: sidebarCollapsed,
+          animations_enabled: animationsEnabled
+        },
+        // Notifications
+        notifications: {
+          notifications_enabled: notificationsEnabled,
+          email_notifications: emailNotifications,
+          push_notifications: pushNotifications,
+          project_updates: notifyOnProjectUpdate,
+          messages: notifyOnMessage,
+          notification_types: {
+            tasks: notifyOnTasks,
+            calendar: notifyOnCalendar,
+            security: notifyOnSecurity,
+            email_digest: emailDigest,
+            ...notificationTypes
+          },
+          quiet_hours: {
+            enabled: quietHoursEnabled,
+            from: quietHoursFrom,
+            to: quietHoursTo
+          }
+        },
+        // Privacy
+        privacy: {
+          portfolio_visibility: portfolioVisibility,
+          show_code_samples: showCodeSamples,
+          show_project_metrics: showProjectMetrics,
+          allow_project_comments: allowProjectComments,
+          social_display: socialDisplay,
+          show_email: showEmail,
+          show_phone: showPhone,
+          profile_public: profilePublic,
+          allow_search_engine_indexing: allowSearchEngineIndexing
+        },
+        // Security
+        security: {
+          two_factor_enabled: twoFactorEnabled,
+          session_timeout: sessionTimeout,
+          login_notifications: loginNotifications,
+          api_keys_count: apiKeysCount,
+          active_api_keys: activeApiKeysCount,
+          active_sessions_count: activeSessionsCount,
+          last_active_api_key: lastActiveApiKey,
+          api_key: apiKey
+        },
+        // Localization
+        localization: {
+          language: language,
+          timezone: timezone,
+          date_format: dateFormat,
+          time_format: timeFormat
+        },
+        // Backup
+        backup: {
+          auto_backup: autoBackup,
+          backup_frequency: backupFrequency,
+          backup_location: backupLocation,
+          last_backup: lastBackup,
+          last_backup_url: lastBackupUrl,
+          last_backup_size: lastBackupSize
+        },        // Developer
+        developer: {
+          github_username: githubUsername,
+          development_environment: devEnvironment,
+          webhook_url: webhookUrl,
+          webhook_events: webhookEvents,
+          code_snippet_theme: codeSnippetTheme,
+          code_editor: codeEditor,
+          preferred_tech_stack: preferredStack
+        },
+        // Projects
+        projects: {
+          featured_projects: featuredProjects,
+          default_sort: defaultProjectSort,
+          projects_per_page: projectsPerPage
+        },
+        // Profile
+        profile: {
+          email: email,
+          username: username,
+          first_name: firstName,
+          last_name: lastName,
+          professional_title: professionalTitle,
+          bio: bio,
+          github_profile: githubProfile,
+          linkedin_profile: linkedinProfile,
+          twitter_profile: twitterProfile
+        }
+      };      const changes = changeDetector.detectChanges(currentSettings);
+      const hasAnyChanges = Object.keys(changes).length > 0 || 
+                           newPassword.trim() !== '' || 
+                           currentPassword.trim() !== '';      console.log('Change Detection Debug:', {
+        hasChangeDetector: !!changeDetector,
+        hasInitialSettings: !!initialSettings,
+        changesDetected: Object.keys(changes).length,
+        passwordChanges: newPassword.trim() !== '' || currentPassword.trim() !== '',
+        hasAnyChanges
+      });
+      
+      console.log('DETAILED CHANGES:', changes);
+      
+      // Debug array comparison
+      if (changes.developer?.preferred_tech_stack) {
+        console.log('PREFERRED STACK COMPARISON:', {
+          initial: initialSettings.developer.preferred_tech_stack,
+          current: currentSettings.developer.preferred_tech_stack,
+          initialLength: initialSettings.developer.preferred_tech_stack?.length,
+          currentLength: currentSettings.developer.preferred_tech_stack?.length,
+          areEqual: JSON.stringify(initialSettings.developer.preferred_tech_stack) === JSON.stringify(currentSettings.developer.preferred_tech_stack)
+        });
+      }
+      
+      if (changes.projects?.featured_projects) {
+        console.log('FEATURED PROJECTS COMPARISON:', {
+          initial: initialSettings.projects.featured_projects,
+          current: currentSettings.projects.featured_projects,
+          initialLength: initialSettings.projects.featured_projects?.length,
+          currentLength: currentSettings.projects.featured_projects?.length,
+          areEqual: JSON.stringify(initialSettings.projects.featured_projects) === JSON.stringify(currentSettings.projects.featured_projects)
+        });
+      }
+      
+      setHasChanges(hasAnyChanges);
+    } else {
+      setHasChanges(false);
+    }
+  }, [
+    changeDetector, initialSettings, darkMode, primaryColor, fontSize, sidebarCollapsed, animationsEnabled,
+    notificationsEnabled, emailNotifications, pushNotifications, notifyOnProjectUpdate, notifyOnMessage,
+    notifyOnTasks, notifyOnCalendar, notifyOnSecurity, emailDigest, notificationTypes,
+    quietHoursEnabled, quietHoursFrom, quietHoursTo, portfolioVisibility, showCodeSamples,
+    showProjectMetrics, allowProjectComments, socialDisplay, showEmail, showPhone, profilePublic,
+    allowSearchEngineIndexing, twoFactorEnabled, sessionTimeout, loginNotifications, apiKeysCount,
+    activeApiKeysCount, activeSessionsCount, lastActiveApiKey, apiKey, language, timezone,
+    dateFormat, timeFormat, autoBackup, backupFrequency, backupLocation, lastBackup,
+    lastBackupUrl, lastBackupSize, githubUsername, devEnvironment, webhookUrl, codeSnippetTheme,
+    codeEditor, preferredStack, featuredProjects, defaultProjectSort, projectsPerPage,
+    webhookEvents, email, username, firstName, lastName, professionalTitle, bio,
+    githubProfile, linkedinProfile, twitterProfile, newPassword, currentPassword
+  ]);
     // Save settings to localStorage when they change
   useEffect(() => {
     const settings = {
@@ -757,15 +1127,162 @@ const Settings = () => {
     const selectedOptions = Array.from(e.target.selectedOptions);
     const selectedValues = selectedOptions.map(option => option.value);
     setFeaturedProjects(selectedValues);
+  };  // Helper function to format constraint violation messages for better UX
+  const formatConstraintError = (errorMessage) => {
+    if (errorMessage.includes('backup_frequency')) {
+      return 'Invalid backup frequency. Please select: daily, weekly, monthly, or never.';
+    }
+    if (errorMessage.includes('backup_location')) {
+      return 'Invalid backup location. Please select: cloud or local.';
+    }
+    if (errorMessage.includes('session_timeout')) {
+      return 'Session timeout must be between 5 and 10,080 minutes (1 week maximum).';
+    }
+    if (errorMessage.includes('default_sort')) {
+      return 'Invalid sort option. Please select: title, created_at, updated_at, status, priority, or progress.';
+    }
+    if (errorMessage.includes('projects_per_page')) {
+      return 'Invalid projects per page. Please select: 5, 6, 9, 10, 12, 18, 24, or 100.';
+    }
+    if (errorMessage.includes('theme')) {
+      return 'Invalid theme. Please select: light, dark, or system.';
+    }
+    return 'Invalid data format. Please check your inputs and try again.';
   };
-  // Handle form submission
+  // Helper function to get user-friendly field names for error messages
+  const getUserFriendlyFieldName = (fieldPath) => {
+    const fieldMap = {
+      'backup.backup_frequency': 'Backup Frequency',
+      'backup.backup_location': 'Backup Location',
+      'security.session_timeout': 'Session Timeout',
+      'projects.default_sort': 'Default Project Sort',
+      'projects.projects_per_page': 'Projects Per Page',
+      'appearance.theme': 'Theme',
+      'appearance.font_size': 'Font Size',
+      'notifications.email_notifications': 'Email Notifications',
+      'privacy.portfolio_visibility': 'Portfolio Visibility'
+    };
+    return fieldMap[fieldPath] || fieldPath;
+  };
+
+  // Session management functions
+  const fetchActiveSessions = async () => {
+    setLoadingSessions(true);
+    try {
+      const response = await apiService.sessions.getAll();
+      if (response.data && response.data.success) {
+        setActiveSessions(response.data.data.sessions || []);
+        console.log('✅ Active sessions loaded:', response.data.data.sessions);
+      }
+    } catch (error) {
+      console.error('❌ Failed to fetch active sessions:', error);
+      setSaveError('Failed to load active sessions');
+    } finally {
+      setLoadingSessions(false);
+    }
+  };
+
+  const fetchSessionStats = async () => {
+    try {
+      const response = await apiService.sessions.getStats();
+      if (response.data && response.data.success) {
+        setSessionStats(response.data.data.stats || {
+          totalSessions: 0,
+          activeSessions: 0,
+          deviceBreakdown: {},
+          topLocations: []
+        });
+        console.log('✅ Session stats loaded:', response.data.data.stats);
+      }
+    } catch (error) {
+      console.error('❌ Failed to fetch session stats:', error);
+    }
+  };
+
+  const handleTerminateSession = async (sessionId) => {
+    try {
+      const response = await apiService.sessions.terminate(sessionId);
+      if (response.data && response.data.success) {
+        // Remove session from local state
+        setActiveSessions(sessions => sessions.filter(session => session.id !== sessionId));
+        setSaveSuccess(true);
+        setTimeout(() => setSaveSuccess(false), 3000);
+        console.log('✅ Session terminated successfully');
+      }
+    } catch (error) {
+      console.error('❌ Failed to terminate session:', error);
+      setSaveError('Failed to terminate session');
+      setTimeout(() => setSaveError(null), 5000);
+    }
+  };
+
+  const handleTerminateOtherSessions = async () => {
+    try {
+      const response = await apiService.sessions.terminateOthers();
+      if (response.data && response.data.success) {
+        // Keep only current session
+        const currentSessionId = localStorage.getItem('sessionId');
+        setActiveSessions(sessions => 
+          sessions.filter(session => session.id === currentSessionId)
+        );
+        setSaveSuccess(true);
+        setTimeout(() => setSaveSuccess(false), 3000);
+        console.log('✅ Other sessions terminated successfully');
+      }
+    } catch (error) {
+      console.error('❌ Failed to terminate other sessions:', error);
+      setSaveError('Failed to terminate other sessions');
+      setTimeout(() => setSaveError(null), 5000);
+    }
+  };
+
+  // Helper function to get device icon based on device type
+  const getDeviceIcon = (deviceType) => {
+    switch (deviceType?.toLowerCase()) {
+      case 'mobile':
+        return FaMobile;
+      case 'tablet':
+        return FaTabletAlt;
+      default:
+        return FaDesktop;
+    }
+  };
+
+  // Helper function to format relative time
+  const formatRelativeTime = (dateString) => {
+    const date = new Date(dateString);
+    const now = new Date();
+    const diffInMinutes = Math.floor((now - date) / (1000 * 60));
+    
+    if (diffInMinutes < 1) return 'Just now';
+    if (diffInMinutes < 60) return `${diffInMinutes} minute${diffInMinutes > 1 ? 's' : ''} ago`;
+    
+    const diffInHours = Math.floor(diffInMinutes / 60);
+    if (diffInHours < 24) return `${diffInHours} hour${diffInHours > 1 ? 's' : ''} ago`;
+    
+    const diffInDays = Math.floor(diffInHours / 24);
+    if (diffInDays < 7) return `${diffInDays} day${diffInDays > 1 ? 's' : ''} ago`;
+    
+    return formatDate(dateString);
+  };
+
+  // Fetch sessions and stats on component mount
+  useEffect(() => {
+    if (!isLoading) {
+      fetchActiveSessions();
+      fetchSessionStats();
+    }
+  }, [isLoading]);
+
+  // Handle form submission with enhanced validation and partial updates
   const handleSubmit = async (e) => {
     e.preventDefault();
     setIsSaving(true);
     setSaveSuccess(false);
     setSaveError(null);
     
-    try {      // Validate password if changing
+    try {
+      // Password validation (existing logic)
       if (newPassword) {
         if (newPassword !== confirmPassword) {
           throw new Error('New passwords do not match');
@@ -778,7 +1295,7 @@ const Settings = () => {
         }
       }
 
-      // Validate new fields
+      // Validate quiet hours timing
       if (quietHoursEnabled && quietHoursFrom && quietHoursTo) {
         const fromTime = new Date(`2000-01-01 ${quietHoursFrom}`);
         const toTime = new Date(`2000-01-01 ${quietHoursTo}`);
@@ -787,15 +1304,108 @@ const Settings = () => {
         }
       }
 
-      if (sessionTimeout && (sessionTimeout < 5 || sessionTimeout > 480)) {
-        throw new Error('Session timeout must be between 5 and 480 minutes');
+      // Get current settings state
+      const currentSettings = {
+        appearance: {
+          theme: darkMode ? 'dark' : 'light',
+          primary_color: primaryColor,
+          font_size: fontSize,
+          sidebar_collapsed: sidebarCollapsed,
+          animations_enabled: animationsEnabled
+        },
+        notifications: {
+          notifications_enabled: notificationsEnabled,
+          email_notifications: emailNotifications,
+          push_notifications: pushNotifications,
+          project_updates: notifyOnProjectUpdate,
+          messages: notifyOnMessage,
+          notification_types: {
+            tasks: notifyOnTasks,
+            calendar: notifyOnCalendar,
+            security: notifyOnSecurity,
+            email_digest: emailDigest,
+            ...notificationTypes
+          },
+          quiet_hours: {
+            enabled: quietHoursEnabled,
+            from: quietHoursFrom,
+            to: quietHoursTo
+          }
+        },
+        privacy: {
+          portfolio_visibility: portfolioVisibility,
+          show_code_samples: showCodeSamples,
+          show_project_metrics: showProjectMetrics,
+          allow_project_comments: allowProjectComments,
+          social_display: socialDisplay,
+          show_email: showEmail,
+          show_phone: showPhone,
+          profile_public: profilePublic,
+          allow_search_engine_indexing: allowSearchEngineIndexing
+        },
+        security: {
+          two_factor_enabled: twoFactorEnabled,
+          session_timeout: sessionTimeout,
+          login_notifications: loginNotifications,
+          api_keys_count: apiKeysCount,
+          active_api_keys: activeApiKeysCount,
+          active_sessions_count: activeSessionsCount,
+          last_active_api_key: lastActiveApiKey,
+          ...(apiKey && apiKey !== import.meta.env.VITE_STRIPE_TEST_KEY && { api_key: apiKey })
+        },
+        localization: {
+          language: language,
+          timezone: timezone,
+          date_format: dateFormat,
+          time_format: timeFormat
+        },
+        backup: {
+          auto_backup: autoBackup,
+          backup_frequency: backupFrequency,
+          backup_location: backupLocation,
+          ...(lastBackup && { last_backup: lastBackup }),
+          ...(lastBackupUrl && { last_backup_url: lastBackupUrl }),
+          ...(lastBackupSize && { last_backup_size: lastBackupSize })
+        },        developer: {
+          github_username: githubUsername,
+          development_environment: devEnvironment,
+          webhook_url: webhookUrl,
+          webhook_events: webhookEvents,
+          code_snippet_theme: codeSnippetTheme,
+          code_editor: codeEditor,
+          preferred_tech_stack: preferredStack
+        },
+        projects: {
+          featured_projects: featuredProjects,
+          default_sort: defaultProjectSort,
+          projects_per_page: parseInt(projectsPerPage)
+        }
+      };
+
+      console.log('🔗 Webhook events being sent to server:', webhookEvents);
+      console.log('📤 Full settings object being sent:', currentSettings);
+
+      // Detect changes using the change detector
+      let changedSettings = {};
+      if (changeDetector && initialSettings) {
+        changedSettings = changeDetector.detectChanges(currentSettings);
+        console.log('Detected changes:', changedSettings);
+      } else {
+        // Fallback to sending all settings if change detection isn't available
+        changedSettings = currentSettings;
+        console.log('Sending all settings (change detection not available)');
       }
 
-      if (codeEditor && codeEditor.trim().length > 100) {
-        throw new Error('Code editor preference should not exceed 100 characters');
+      // Validate the settings data using API validation
+      if (Object.keys(changedSettings).length > 0) {
+        const validation = validateForAPI(changedSettings);
+        if (!validation.valid) {
+          const formattedErrors = formatErrorMessages(validation.errors);
+          throw new Error(`Settings validation failed: ${formattedErrors.map(e => e.message).join('; ')}`);
+        }
       }
 
-      // Prepare profile data
+      // Prepare profile data if profile fields have changed
       const profileData = {
         first_name: firstName,
         last_name: lastName,
@@ -807,109 +1417,56 @@ const Settings = () => {
           twitter: twitterProfile
         },
         skills: preferredStack.map(tech => ({ name: tech }))
-      };      // Prepare settings data with comprehensive nested structure
-      const settingsData = {
-        appearance: {
-          theme: darkMode ? 'dark' : 'light',
-          primary_color: primaryColor,
-          font_size: fontSize,
-          sidebar_collapsed: sidebarCollapsed ? 1 : 0,
-          animations_enabled: animationsEnabled ? 1 : 0
-        },        notifications: {
-          notifications_enabled: notificationsEnabled ? 1 : 0,
-          email_notifications: emailNotifications ? 1 : 0,
-          push_notifications: pushNotifications ? 1 : 0,
-          project_updates: notifyOnProjectUpdate ? 1 : 0,
-          messages: notifyOnMessage ? 1 : 0,
-          notification_types: {
-            ...notificationTypes,
-            tasks: notifyOnTasks ? 1 : 0,
-            calendar: notifyOnCalendar ? 1 : 0,
-            security: notifyOnSecurity ? 1 : 0,
-            email_digest: emailDigest ? 1 : 0
-          },
-          quiet_hours: {
-            enabled: quietHoursEnabled ? 1 : 0,
-            from: quietHoursFrom,
-            to: quietHoursTo
-          }
-        },
-        privacy: {
-          portfolio_visibility: portfolioVisibility,
-          show_code_samples: showCodeSamples ? 1 : 0,
-          show_project_metrics: showProjectMetrics ? 1 : 0,
-          allow_project_comments: allowProjectComments ? 1 : 0,
-          social_display: socialDisplay,
-          show_email: showEmail ? 1 : 0,
-          show_phone: showPhone ? 1 : 0,
-          profile_public: profilePublic ? 1 : 0,
-          allow_search_engine_indexing: allowSearchEngineIndexing ? 1 : 0
-        },        security: {
-          // Only include API key if it's been modified or generated
-          ...(apiKey && apiKey !== import.meta.env.VITE_STRIPE_TEST_KEY && { api_key: apiKey }),
-          two_factor_enabled: twoFactorEnabled ? 1 : 0,
-          session_timeout: sessionTimeout,
-          login_notifications: loginNotifications ? 1 : 0,
-          api_keys_count: apiKeysCount,
-          active_api_keys: activeApiKeysCount,
-          active_sessions_count: activeSessionsCount,
-          last_active_api_key: lastActiveApiKey
-        },
-        localization: {
-          language: language,
-          timezone: timezone,
-          date_format: dateFormat,
-          time_format: timeFormat
-        },        backup: {
-          auto_backup: autoBackup ? 1 : 0,
-          backup_frequency: backupFrequency,
-          backup_location: backupLocation,
-          ...(lastBackup && { last_backup: lastBackup }),
-          ...(lastBackupUrl && { last_backup_url: lastBackupUrl }),
-          ...(lastBackupSize && { last_backup_size: lastBackupSize })
-        },        developer: {
-          github_username: githubUsername,
-          development_environment: devEnvironment,
-          webhook_url: webhookUrl,
-          code_snippet_theme: codeSnippetTheme,
-          code_editor: codeEditor,
-          preferred_tech_stack: preferredStack.map(tech => ({ name: tech }))
-        },
-        projects: {
-          featured_projects: featuredProjects.map(id => parseInt(id)),
-          default_sort: defaultProjectSort,
-          projects_per_page: parseInt(projectsPerPage),
-          webhook_events: webhookEvents
-        }
       };
 
-      // Update profile and settings
-      const updatePromises = [
-        apiService.profile.update(profileData),
-        apiService.settings.update(settingsData)
-      ];
+      // Prepare promises array
+      const updatePromises = [];
 
-      // If password is being changed, include that in the update
+      // Always update profile data (could be enhanced with change detection later)
+      updatePromises.push(apiService.profile.update(profileData));
+
+      // Only update settings if there are changes
+      if (Object.keys(changedSettings).length > 0) {
+        // Transform settings for backend API format
+        const transformedSettings = transformForBackend(changedSettings);
+        console.log('Sending transformed settings to API:', transformedSettings);
+        
+        // Use the updateSettings utility function
+        const settingsResult = await updateSettings(apiService, transformedSettings, {
+          validateBeforeSend: false, // Already validated above
+          transformData: false // Already transformed above
+        });
+
+        if (!settingsResult.success) {
+          throw new Error(settingsResult.error);
+        }
+      } else {
+        console.log('No settings changes detected, skipping settings update');
+      }      // Handle password change separately
       if (newPassword) {
         const passwordData = {
           current_password: currentPassword,
           new_password: newPassword,
           confirm_password: confirmPassword
         };
-        updatePromises.push(apiService.profile.updatePassword(passwordData));
+        updatePromises.push(apiService.auth.changePassword(passwordData));
       }
 
       // Execute all updates
       await Promise.all(updatePromises);
       
-      // Success
+      // Success - update initial settings for future change detection
+      setInitialSettings(currentSettings);
+      if (changeDetector) {
+        setChangeDetector(createSettingsChangeDetector(currentSettings));
+      }
+      
       setSaveSuccess(true);
       
       // Reset password fields
       setCurrentPassword('');
       setNewPassword('');
-      setConfirmPassword('');
-        // Update local storage with comprehensive settings
+      setConfirmPassword('');        // Update local storage with comprehensive settings
       const localSettings = {
         // Appearance settings
         darkMode,
@@ -967,10 +1524,30 @@ const Settings = () => {
       setTimeout(() => {
         setSaveSuccess(false);
       }, 3000);
-      
-    } catch (error) {
+        } catch (error) {
       console.error('Error saving settings:', error);
-      setSaveError(error.response?.data?.message || error.message || 'An error occurred while saving settings');
+      
+      // Enhanced error handling with user-friendly messages
+      let errorMessage = 'An error occurred while saving settings';
+      
+      if (error.response?.status === 500 && error.response?.data?.message?.includes('CONSTRAINT')) {
+        errorMessage = formatConstraintError(error.response.data.message);
+      } else if (error.response?.status === 400) {
+        const apiError = error.response.data;
+        if (apiError.errors && typeof apiError.errors === 'object') {
+          // Handle validation errors with field names
+          const fieldErrors = Object.entries(apiError.errors)
+            .map(([field, message]) => `${getUserFriendlyFieldName(field)}: ${message}`)
+            .join('; ');
+          errorMessage = `Validation failed: ${fieldErrors}`;
+        } else {
+          errorMessage = apiError.message || 'Invalid request data';
+        }
+      } else if (error.message) {
+        errorMessage = error.message;
+      }
+      
+      setSaveError(errorMessage);
       
       // Clear error message after 5 seconds
       setTimeout(() => {
@@ -2361,8 +2938,7 @@ const Settings = () => {
                     </div>
                   </div>                  <p className="form-help">Get notified when someone logs into your account</p>
                 </div>
-                
-                <div className="form-group">
+                  <div className="form-group">
                   <label>Security Monitoring</label>
                   <div className="security-stats">
                     <div className="security-stat-item">
@@ -2371,76 +2947,116 @@ const Settings = () => {
                     </div>
                     <div className="security-stat-item">
                       <div className="security-stat-label">Active Sessions</div>
-                      <div className="security-stat-value">{activeSessionsCount}</div>
+                      <div className="security-stat-value">{sessionStats.activeSessions || activeSessionsCount}</div>
                     </div>
-                    {lastActiveApiKey && (
+                    {sessionStats.totalSessions > 0 && (
+                      <div className="security-stat-item">
+                        <div className="security-stat-label">Total Sessions</div>
+                        <div className="security-stat-value">{sessionStats.totalSessions}</div>
+                      </div>
+                    )}                    {lastActiveApiKey && (
                       <div className="security-stat-item">
                         <div className="security-stat-label">Last Active API Key</div>
-                        <div className="security-stat-value">{lastActiveApiKey}</div>
+                        <div className="security-stat-value">
+                          {typeof lastActiveApiKey === 'object' ? lastActiveApiKey.name || lastActiveApiKey.id : lastActiveApiKey}
+                        </div>
                       </div>
                     )}
                   </div>
+                  
+                  {/* Device breakdown */}
+                  {Object.keys(sessionStats.deviceBreakdown || {}).length > 0 && (
+                    <div className="device-breakdown">
+                      <h4>Devices</h4>
+                      <div className="device-stats">
+                        {Object.entries(sessionStats.deviceBreakdown).map(([deviceType, count]) => (
+                          <div key={deviceType} className="device-stat">
+                            <span className="device-type">{deviceType}</span>
+                            <span className="device-count">{count}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                  
+                  {/* Top locations */}
+                  {sessionStats.topLocations && sessionStats.topLocations.length > 0 && (
+                    <div className="location-breakdown">
+                      <h4>Top Locations</h4>
+                      <div className="location-stats">
+                        {sessionStats.topLocations.slice(0, 3).map((location, index) => (
+                          <div key={index} className="location-stat">
+                            <span className="location-name">{location.location}</span>
+                            <span className="location-count">{location.count}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                  
                   <p className="form-help">Monitor your account's security status</p>
                 </div>
-                
-                <div className="form-group">
+                  <div className="form-group">
                   <label>Active Sessions</label>
-                  <div className="session-list">
-                    <div className="session-item current">
-                      <div className="session-info">
-                        <div className="session-device">
-                          <FaDesktop className="device-icon" />
-                          <div className="device-details">
-                            <h4>Chrome on Windows</h4>
-                            <p>Nairobi, Kenya • 192.168.1.1</p>
-                          </div>
-                        </div>
-                        <div className="session-time">
-                          <span>Current session</span>
-                        </div>
-                      </div>
+                  {loadingSessions ? (
+                    <div className="session-loading">
+                      <FaSync className="spinner-icon spinning" />
+                      <span>Loading sessions...</span>
                     </div>
-                    
-                    <div className="session-item">
-                      <div className="session-info">
-                        <div className="session-device">
-                          <FaMobile className="device-icon" />
-                          <div className="device-details">
-                            <h4>Safari on iPhone</h4>
-                            <p>Nairobi, Kenya • 192.168.1.2</p>
+                  ) : activeSessions.length > 0 ? (
+                    <div className="session-list">
+                      {activeSessions.map((session) => {
+                        const currentSessionId = localStorage.getItem('sessionId');
+                        const isCurrentSession = session.id === currentSessionId;
+                        const DeviceIcon = getDeviceIcon(session.device_type);
+                        
+                        return (
+                          <div key={session.id} className={`session-item ${isCurrentSession ? 'current' : ''}`}>
+                            <div className="session-info">
+                              <div className="session-device">
+                                <DeviceIcon className="device-icon" />
+                                <div className="device-details">
+                                  <h4>{session.browser} on {session.device_name || session.os}</h4>
+                                  <p>{session.location || 'Unknown Location'} • {session.ip_address || 'Unknown IP'}</p>
+                                </div>
+                              </div>
+                              <div className="session-time">
+                                <span>
+                                  {isCurrentSession 
+                                    ? 'Current session' 
+                                    : `Active ${formatRelativeTime(session.last_activity)}`
+                                  }
+                                </span>
+                              </div>
+                            </div>
+                            {!isCurrentSession && (
+                              <button 
+                                type="button" 
+                                className="btn-outline danger"
+                                onClick={() => handleTerminateSession(session.id)}
+                              >
+                                <FaSignOutAlt /> Logout
+                              </button>
+                            )}
                           </div>
-                        </div>
-                        <div className="session-time">
-                          <span>Active 2 hours ago</span>
-                        </div>
-                      </div>
-                      <button type="button" className="btn-outline danger">
-                        <FaSignOutAlt /> Logout
-                      </button>
+                        );
+                      })}
                     </div>
-                    
-                    <div className="session-item">
-                      <div className="session-info">
-                        <div className="session-device">
-                          <FaTabletAlt className="device-icon" />
-                          <div className="device-details">
-                            <h4>Chrome on iPad</h4>
-                            <p>Mombasa, Kenya • 192.168.1.3</p>
-                          </div>
-                        </div>
-                        <div className="session-time">
-                          <span>Active 3 days ago</span>
-                        </div>
-                      </div>
-                      <button type="button" className="btn-outline danger">
-                        <FaSignOutAlt /> Logout
-                      </button>
+                  ) : (
+                    <div className="session-empty">
+                      <p>No active sessions found</p>
                     </div>
-                  </div>
+                  )}
                   
-                  <button type="button" className="btn-outline danger">
-                    <FaSignOutAlt /> Logout of all other sessions
-                  </button>
+                  {activeSessions.length > 1 && (
+                    <button 
+                      type="button" 
+                      className="btn-outline danger"
+                      onClick={handleTerminateOtherSessions}
+                    >
+                      <FaSignOutAlt /> Logout of all other sessions
+                    </button>
+                  )}
                 </div>
               </div>
             </section>
@@ -2515,36 +3131,105 @@ const Settings = () => {
                     placeholder="https://example.com/webhook"
                   />
                   <p className="form-help">URL to receive notifications when your portfolio data changes</p>
-                </div>
-                  <div className="form-group">
+                </div>                  <div className="form-group">
                   <label>Webhook Events</label>
-                  <div className="checkbox-group">
-                    <div className="checkbox-item">
+                  <p className="form-help">Select which events should trigger webhook notifications</p>
+                  <div className="webhook-events-grid">
+                    <div className="webhook-event-item">
                       <input 
                         type="checkbox" 
-                        id="event-project" 
-                        checked={webhookEvents.project}
-                        onChange={(e) => setWebhookEvents({...webhookEvents, project: e.target.checked})}
+                        id="event-push" 
+                        checked={webhookEvents.includes('push')}
+                        onChange={(e) => {
+                          const event = 'push';
+                          setWebhookEvents(prev => 
+                            e.target.checked 
+                              ? [...prev.filter(ev => ev !== event), event]
+                              : prev.filter(ev => ev !== event)
+                          );
+                        }}
                       />
-                      <label htmlFor="event-project">Project updates</label>
+                      <label htmlFor="event-push">Push events</label>
                     </div>
-                    <div className="checkbox-item">
+                    <div className="webhook-event-item">
                       <input 
                         type="checkbox" 
-                        id="event-profile" 
-                        checked={webhookEvents.profile}
-                        onChange={(e) => setWebhookEvents({...webhookEvents, profile: e.target.checked})}
+                        id="event-pull-request" 
+                        checked={webhookEvents.includes('pull_request')}
+                        onChange={(e) => {
+                          const event = 'pull_request';
+                          setWebhookEvents(prev => 
+                            e.target.checked 
+                              ? [...prev.filter(ev => ev !== event), event]
+                              : prev.filter(ev => ev !== event)
+                          );
+                        }}
                       />
-                      <label htmlFor="event-profile">Profile changes</label>
+                      <label htmlFor="event-pull-request">Pull requests</label>
                     </div>
-                    <div className="checkbox-item">
+                    <div className="webhook-event-item">
                       <input 
                         type="checkbox" 
-                        id="event-contact" 
-                        checked={webhookEvents.contact}
-                        onChange={(e) => setWebhookEvents({...webhookEvents, contact: e.target.checked})}
+                        id="event-issues" 
+                        checked={webhookEvents.includes('issues')}
+                        onChange={(e) => {
+                          const event = 'issues';
+                          setWebhookEvents(prev => 
+                            e.target.checked 
+                              ? [...prev.filter(ev => ev !== event), event]
+                              : prev.filter(ev => ev !== event)
+                          );
+                        }}
                       />
-                      <label htmlFor="event-contact">Contact form submissions</label>
+                      <label htmlFor="event-issues">Issues</label>
+                    </div>
+                    <div className="webhook-event-item">
+                      <input 
+                        type="checkbox" 
+                        id="event-project-updates" 
+                        checked={webhookEvents.includes('project_updates')}
+                        onChange={(e) => {
+                          const event = 'project_updates';
+                          setWebhookEvents(prev => 
+                            e.target.checked 
+                              ? [...prev.filter(ev => ev !== event), event]
+                              : prev.filter(ev => ev !== event)
+                          );
+                        }}
+                      />
+                      <label htmlFor="event-project-updates">Project updates</label>
+                    </div>
+                    <div className="webhook-event-item">
+                      <input 
+                        type="checkbox" 
+                        id="event-profile-changes" 
+                        checked={webhookEvents.includes('profile_changes')}
+                        onChange={(e) => {
+                          const event = 'profile_changes';
+                          setWebhookEvents(prev => 
+                            e.target.checked 
+                              ? [...prev.filter(ev => ev !== event), event]
+                              : prev.filter(ev => ev !== event)
+                          );
+                        }}
+                      />
+                      <label htmlFor="event-profile-changes">Profile changes</label>
+                    </div>
+                    <div className="webhook-event-item">
+                      <input 
+                        type="checkbox" 
+                        id="event-contact-form" 
+                        checked={webhookEvents.includes('contact_form_submissions')}
+                        onChange={(e) => {
+                          const event = 'contact_form_submissions';
+                          setWebhookEvents(prev => 
+                            e.target.checked 
+                              ? [...prev.filter(ev => ev !== event), event]
+                              : prev.filter(ev => ev !== event)
+                          );
+                        }}
+                      />
+                      <label htmlFor="event-contact-form">Contact form submissions</label>
                     </div>
                   </div>
                 </div>
@@ -2784,11 +3469,10 @@ const Settings = () => {
             <div className="form-actions">
               <button type="button" className="btn-secondary" onClick={() => window.history.back()}>
                 Cancel
-              </button>
-              <button 
+              </button>              <button 
                 type="submit" 
                 className="btn-primary"
-                disabled={isSaving}
+                disabled={isSaving || !hasChanges}
               >
                 {isSaving ? 'Saving...' : 'Save Changes'}
               </button>
@@ -2824,8 +3508,37 @@ const Settings = () => {
             <FaExclamationTriangle className="error-icon" />
             <span>{saveError}</span>
           </motion.div>
-        )}
-      </AnimatePresence>
+        )}      </AnimatePresence>
+      
+      {/* Debug Helper for Development */}
+      {process.env.NODE_ENV === 'development' && (
+        <div style={{ 
+          position: 'fixed', 
+          bottom: '10px', 
+          left: '10px', 
+          background: 'rgba(0,0,0,0.8)', 
+          color: 'white', 
+          padding: '8px 12px', 
+          borderRadius: '4px', 
+          fontSize: '12px',
+          zIndex: 1000
+        }}>
+          <details>
+            <summary style={{ cursor: 'pointer' }}>Settings Debug</summary>
+            <div style={{ marginTop: '8px' }}>
+              <div>Changes Detected: {changeDetector && initialSettings ? 
+                Object.keys(changeDetector.detectChanges({
+                  appearance: { theme: darkMode ? 'dark' : 'light' },
+                  notifications: { email_notifications: emailNotifications }
+                })).length : 'N/A'}</div>
+              <div>Initial Settings: {initialSettings ? 'Loaded' : 'Not Set'}</div>
+              <div>Change Detector: {changeDetector ? 'Ready' : 'Not Set'}</div>
+              <div>API Validation: Available</div>
+              <div>PUT Integration: Active</div>
+            </div>
+          </details>
+        </div>
+      )}
       
       <style>{`
         /* Settings Container */
@@ -3529,10 +4242,81 @@ const Settings = () => {
           font-size: var(--text-xs);
           color: var(--gray-500);
         }
-        
-        .session-time {
+          .session-time {
           font-size: var(--text-xs);
           color: var(--gray-500);
+        }
+        
+        /* Session Loading */
+        .session-loading {
+          display: flex;
+          align-items: center;
+          gap: var(--spacing-sm);
+          padding: var(--spacing-md);
+          background-color: var(--gray-50);
+          border-radius: var(--border-radius);
+          border: 1px solid var(--gray-200);
+        }
+        
+        .session-loading .spinner-icon {
+          animation: spin 1s linear infinite;
+        }
+        
+        .session-empty {
+          padding: var(--spacing-md);
+          text-align: center;
+          color: var(--gray-500);
+          background-color: var(--gray-50);
+          border-radius: var(--border-radius);
+          border: 1px solid var(--gray-200);
+        }
+        
+        /* Device and Location Breakdown */
+        .device-breakdown,
+        .location-breakdown {
+          margin-top: var(--spacing-md);
+          padding: var(--spacing-md);
+          background-color: var(--gray-50);
+          border-radius: var(--border-radius);
+        }
+        
+        .device-breakdown h4,
+        .location-breakdown h4 {
+          font-size: var(--text-sm);
+          font-weight: 600;
+          margin-bottom: var(--spacing-sm);
+          color: var(--gray-700);
+        }
+        
+        .device-stats,
+        .location-stats {
+          display: flex;
+          flex-direction: column;
+          gap: var(--spacing-xs);
+        }
+        
+        .device-stat,
+        .location-stat {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          font-size: var(--text-sm);
+        }
+        
+        .device-type,
+        .location-name {
+          color: var(--gray-700);
+        }
+        
+        .device-count,
+        .location-count {
+          color: var(--gray-500);
+          font-weight: 500;
+        }
+        
+        @keyframes spin {
+          from { transform: rotate(0deg); }
+          to { transform: rotate(360deg); }
         }
         
         /* API Key Display */
@@ -3626,9 +4410,53 @@ const Settings = () => {
           align-items: center;
           gap: var(--spacing-sm);
         }
-        
-        .checkbox-item input[type="checkbox"] {
+          .checkbox-item input[type="checkbox"] {
           width: auto;
+        }
+        
+        /* Webhook Events Grid */
+        .webhook-events-grid {
+          display: grid;
+          grid-template-columns: 1fr 1fr;
+          grid-template-rows: repeat(3, auto);
+          gap: var(--spacing-md);
+          margin-top: var(--spacing-sm);
+          padding: var(--spacing-md);
+          background-color: var(--gray-50);
+          border-radius: var(--border-radius);
+          border: 1px solid var(--gray-200);
+        }
+        
+        .webhook-event-item {
+          display: flex;
+          align-items: center;
+          gap: var(--spacing-sm);
+          padding: var(--spacing-sm);
+          background-color: var(--white);
+          border-radius: var(--border-radius);
+          border: 1px solid var(--gray-200);
+          transition: var(--transition-fast);
+        }
+        
+        .webhook-event-item:hover {
+          border-color: var(--primary-color);
+          box-shadow: 0 0 0 2px rgba(79, 70, 229, 0.1);
+        }
+        
+        .webhook-event-item input[type="checkbox"] {
+          width: 16px;
+          height: 16px;
+          accent-color: var(--primary-color);
+          cursor: pointer;
+        }
+        
+        .webhook-event-item label {
+          font-size: var(--text-sm);
+          font-weight: 500;
+          color: var(--gray-700);
+          cursor: pointer;
+          margin: 0;
+          flex: 1;
         }
         
         /* Social Inputs */
@@ -4156,10 +4984,19 @@ const Settings = () => {
           .api-key-actions {
             flex-direction: column;
           }
-          
-          .api-key-actions button {
+            .api-key-actions button {
             width: 100%;
-          }        }
+          }
+          
+          .webhook-events-grid {
+            grid-template-columns: 1fr;
+            gap: var(--spacing-sm);
+          }
+          
+          .webhook-event-item {
+            padding: var(--spacing-sm);
+          }
+        }
       `}</style>
       </>
       )}

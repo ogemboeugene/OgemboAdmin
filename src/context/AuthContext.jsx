@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import PropTypes from 'prop-types';
 import apiService from '../services/api/apiService';
+import sessionTracker from '../services/sessionTracker';
 import { useNotification } from './NotificationContext';
 import { getAccessToken, getRefreshToken, setTokens, clearTokens, isTokenExpired } from '../utils/tokenUtils';
 import useTokenRefresh from '../hooks/useTokenRefresh';
@@ -120,20 +121,41 @@ export const AuthProvider = ({ children }) => {
     };
 
     checkAuthStatus();
-  }, []);
-  // Login function
+  }, []);  // Login function
   const login = async (credentials) => {
     setIsLoading(true);
     setError(null);
     
     try {
-      // Call the real API endpoint
+      // Get session information before login
+      console.log('🔍 Creating session data before login...');
+      const sessionData = await sessionTracker.createSessionData();
+      
+      // Call the login API endpoint
       const response = await apiService.auth.login(credentials);
-        // Handle successful login based on expected response format
+        
+      // Handle successful login based on expected response format
       if (response.data && response.data.success) {
         const { user, access_token, refresh_token } = response.data.data;
-          // Save tokens using utility function
+          
+        // Save tokens using utility function
         setTokens(access_token, refresh_token);
+        
+        // Create session after successful login
+        try {
+          console.log('🔐 Creating session after successful login...');
+          const sessionResponse = await apiService.sessions.create(sessionData);
+          
+          if (sessionResponse.data && sessionResponse.data.success) {
+            const session = sessionResponse.data.data.session;
+            localStorage.setItem('sessionId', session.id);
+            sessionTracker.sessionInfo.sessionId = session.id;
+            console.log('✅ Session created successfully:', session.id);
+          }
+        } catch (sessionError) {
+          console.warn('⚠️ Session creation failed, but login succeeded:', sessionError);
+          // Don't fail login if session creation fails
+        }
         
         // Format user data for our context if needed
         const formattedUser = {
@@ -145,12 +167,14 @@ export const AuthProvider = ({ children }) => {
           profile: user.profile,
           settings: user.settings
         };
-          // Update auth context state
+          
+        // Update auth context state
         setUser(formattedUser);
         setIsLoggedIn(true);
         
-        // Start token monitoring
+        // Start token monitoring and activity tracking
         startTokenMonitoring();
+        startActivityMonitoring();
         
         // Return success result
         return { 
@@ -277,12 +301,19 @@ export const AuthProvider = ({ children }) => {
   const forceLogout = () => {
     console.log('🚨 Force logout initiated');
     
+    // Stop activity monitoring
+    stopActivityMonitoring();
+    
     // Clear all tokens using utility function
     clearTokens();
     
     // Clear other possible storage locations
     localStorage.removeItem('user');
+    localStorage.removeItem('sessionId');
     sessionStorage.clear();
+    
+    // Reset session tracker
+    sessionTracker.reset();
     
   // Reset all auth state
     setUser(null);
@@ -292,25 +323,100 @@ export const AuthProvider = ({ children }) => {
     
     // Stop token monitoring
     stopTokenMonitoring();
-    
-    console.log('🧹 Force logout completed - all data cleared');
+      console.log('🧹 Force logout completed - all data cleared');
   };
 
+  // Activity monitoring functions
+  const startActivityMonitoring = () => {
+    console.log('🔄 Starting activity monitoring...');
+    
+    // Update activity every 5 minutes
+    const activityInterval = setInterval(async () => {
+      const sessionId = localStorage.getItem('sessionId');
+      if (sessionId && isLoggedIn) {
+        try {
+          sessionTracker.updateLastActivity();
+          await apiService.sessions.updateActivity(sessionId);
+          console.log('⏰ Session activity updated');
+        } catch (error) {
+          console.warn('Failed to update session activity:', error);
+        }
+      }
+    }, 5 * 60 * 1000); // 5 minutes
+
+    // Monitor user activity (mouse, keyboard, scroll, touch)
+    const events = ['mousedown', 'mousemove', 'keypress', 'scroll', 'touchstart', 'click'];
+    const activityHandler = () => {
+      sessionTracker.updateLastActivity();
+    };
+
+    events.forEach(event => {
+      document.addEventListener(event, activityHandler, true);
+    });
+
+    // Store interval ID and events for cleanup
+    window.activityInterval = activityInterval;
+    window.activityEvents = { events, handler: activityHandler };
+    
+    console.log('✅ Activity monitoring started');
+  };
+
+  const stopActivityMonitoring = () => {
+    console.log('🛑 Stopping activity monitoring...');
+    
+    // Clear activity interval
+    if (window.activityInterval) {
+      clearInterval(window.activityInterval);
+      window.activityInterval = null;
+    }
+    
+    // Remove activity event listeners
+    if (window.activityEvents) {
+      window.activityEvents.events.forEach(event => {
+        document.removeEventListener(event, window.activityEvents.handler, true);
+      });
+      window.activityEvents = null;
+    }
+    
+    console.log('✅ Activity monitoring stopped');
+  };
   // Logout function
   const logout = async () => {
     setIsLoading(true);
       try {
       console.log('🚪 Starting logout process...');
       
-      // First, clear local data immediately for security using utility function
+      // Get session ID before clearing
+      const sessionId = localStorage.getItem('sessionId');
+      
+      // Terminate current session first
+      if (sessionId) {
+        try {
+          console.log('🔐 Terminating session:', sessionId);
+          await apiService.sessions.terminate(sessionId);
+          console.log('✅ Session terminated successfully');
+        } catch (sessionError) {
+          console.warn('⚠️ Session termination failed:', sessionError);
+        }
+      }
+      
+      // Stop activity monitoring
+      stopActivityMonitoring();
+      
+      // Clear local data for security using utility function
       clearTokens();
-      localStorage.removeItem('user'); // Clear user data
+      localStorage.removeItem('user');
+      localStorage.removeItem('sessionId');
       
       // Clear session storage as well
       sessionStorage.clear();
       
+      // Reset session tracker
+      sessionTracker.reset();
+      
       console.log('🧹 Local storage cleared');
-        // Reset auth state immediately
+        
+      // Reset auth state immediately
       setUser(null);
       setIsLoggedIn(false);
       

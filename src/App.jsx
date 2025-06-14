@@ -21,6 +21,7 @@ import ResetPassword from './pages/auth/ResetPassword';
 import Settings from './pages/settings/Settings';
 import Tasks from './pages/tasks/Tasks';
 import Help from './pages/help/Help';
+import Analytics from './pages/analytics/Analytics';
 import './App.css';
 
 // Protected route component
@@ -77,9 +78,11 @@ const App = () => {
               <Route path="projects/new" element={<ProjectForm />} />
               <Route path="projects/:id/edit" element={<ProjectForm editMode />} />
               <Route path="projects/:id/view" element={<ProjectDetails />} />
-              
-              {/* Calendar route */}
+                {/* Calendar route */}
               <Route path="calendar" element={<Calendar />} />
+
+              {/* Analytics route */}
+              <Route path="analytics" element={<Analytics />} />
 
               {/* Settings route */}
               <Route path="settings" element={<Settings />} />

@@ -498,7 +498,8 @@ apiClient.interceptors.response.use(
 );
 
 // API Services
-const apiService = {  // Auth services
+const apiService = {
+  // Auth services
   auth: {
     login: (credentials) => apiClient.post('/auth/login', credentials),
     register: (userData) => apiClient.post('/auth/register', userData),
@@ -509,7 +510,53 @@ const apiService = {  // Auth services
     // Validate current token
     validateToken: () => apiClient.get('/auth/validate'),
     // Get current user info
-    me: () => apiClient.get('/auth/me'),
+    me: () => apiClient.get('/auth/me'),    // Change password
+    changePassword: (passwordData) => apiClient.post('/auth/change-password', passwordData),
+  },
+
+  // Session management
+  sessions: {
+    // Create new session on login
+    create: (sessionData) => {
+      console.log('🔐 Creating new session:', sessionData);
+      return apiClient.post('/sessions', sessionData);
+    },
+    
+    // Get all user sessions
+    getAll: () => {
+      console.log('📋 Fetching all user sessions');
+      return apiClient.get('/sessions');
+    },
+    
+    // Get current session
+    getCurrent: () => {
+      console.log('🔍 Fetching current session');
+      return apiClient.get('/sessions/current');
+    },
+    
+    // Update session activity
+    updateActivity: (sessionId) => {
+      console.log('⏰ Updating session activity:', sessionId);
+      return apiClient.patch(`/sessions/${sessionId}/activity`);
+    },
+    
+    // Terminate specific session
+    terminate: (sessionId) => {
+      console.log('🚪 Terminating session:', sessionId);
+      return apiClient.delete(`/sessions/${sessionId}`);
+    },
+    
+    // Terminate all other sessions
+    terminateOthers: () => {
+      console.log('🧹 Terminating all other sessions');
+      return apiClient.delete('/sessions/others');
+    },
+    
+    // Get session statistics
+    getStats: () => {
+      console.log('📊 Fetching session statistics');
+      return apiClient.get('/sessions/stats');
+    },
   },
   // Profile services
   profile: {
@@ -677,6 +724,12 @@ const apiService = {  // Auth services
     getOverview: () => apiClient.get('/dashboard/overview'),
     getUpcomingDeadlines: (params = {}) => apiClient.get('/dashboard/upcoming-deadlines', { params }),
     getRecentActivity: (params = {}) => apiClient.get('/dashboard/recent-activity', { params }),
+    
+    // Get user performance metrics
+    getPerformance: (params = {}) => {
+      console.log('📊 Fetching performance metrics:', params);
+      return apiClient.get('/dashboard/performance', { params });
+    },
   },    // Tasks services - Enhanced with flexible format support
   tasks: {
     // Get all tasks with optional filtering

@@ -12,7 +12,19 @@ import {
   FaSync
 } from 'react-icons/fa';
 
-const DeveloperMetricsCard = ({ timeRange, project, settingsConfig, sessionStats, performanceData, developerMetrics, chartsData, isLoading: dataLoading }) => {
+const DeveloperMetricsCard = ({ 
+  timeRange, 
+  project, 
+  settingsConfig, 
+  sessionStats, 
+  performanceData, 
+  developerMetrics, 
+  chartsData,
+  dashboardData,
+  taskData,
+  projectData,
+  isLoading: dataLoading 
+}) => {
   const [metrics, setMetrics] = useState({
     totalCommits: 0,
     linesOfCode: 0,
@@ -25,16 +37,33 @@ const DeveloperMetricsCard = ({ timeRange, project, settingsConfig, sessionStats
   });
 
   const [loading, setLoading] = useState(true);
-  useEffect(() => {
-    // Use real data if available, otherwise simulate
+  useEffect(() => {    // Use real data if available, otherwise simulate
     const fetchMetrics = async () => {
       setLoading(true);
         setTimeout(() => {
-        if (developerMetrics && performanceData) {
-          // Use real developer metrics data
+        if (dashboardData || taskData || projectData) {
+          // Priority 1: Use real dashboard analytics data
+          const summary = dashboardData?.analytics?.summary || {};
+          const taskAnalytics = taskData?.analytics || {};
+          const projectAnalytics = projectData?.analytics || {};
+          const taskMetrics = taskAnalytics?.taskMetrics || {};
+          const productivity = taskAnalytics?.productivity || {};
+          const projectSummary = projectAnalytics?.summary || {};
+          
+          setMetrics({
+            totalCommits: Math.floor((summary.completed_tasks || taskMetrics.totalTasks || 5) * 3), // 3 commits per task
+            linesOfCode: Math.floor((summary.completed_tasks || taskMetrics.totalTasks || 5) * 180), // 180 LOC per task
+            bugsFixed: Math.max(1, taskMetrics.overdueTasks || Math.floor((summary.completed_tasks || 5) * 0.25)), // Use overdue as bug proxy
+            codeReviews: Math.floor((summary.total_projects || projectSummary.total_projects || 3) * 2.5), // Reviews per project
+            buildSuccess: Math.max(75, Math.min(98, 100 - (productivity.overdueRate || 10))), // Build success from overdue rate
+            testCoverage: Math.max(60, Math.min(95, (productivity.completionRate || taskAnalytics.productivity?.completionRate || 70))), // Use completion rate
+            averageReviewTime: Math.max(1, 8 - Math.floor((productivity.completionRate || 50) / 20)), // Better completion = faster reviews
+            deployments: Math.max(1, projectSummary.completed_projects || Math.floor((summary.total_projects || 3) * 0.4)) // Completed projects as deployments
+          });
+        } else if (developerMetrics && performanceData) {
+          // Priority 2: Use existing developer metrics data
           const overview = developerMetrics.overview || {};
           const productivity = developerMetrics.productivity || {};
-          const technologies = developerMetrics.technologies || [];
           
           setMetrics({
             totalCommits: Math.floor((overview.tasks?.completed || 5) * 3), // Estimate 3 commits per completed task
@@ -47,7 +76,7 @@ const DeveloperMetricsCard = ({ timeRange, project, settingsConfig, sessionStats
             deployments: Math.max(1, overview.projects?.completed || 1) // Deployments = completed projects
           });
         } else if (performanceData && sessionStats) {
-          // Fallback to performance data mapping
+          // Priority 3: Fallback to performance data mapping
           const taskData = performanceData.taskPerformance || {};
           const projectData = performanceData.projectPerformance || {};
           

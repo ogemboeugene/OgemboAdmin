@@ -41,6 +41,8 @@ import PerformanceMetrics from './components/PerformanceMetrics';
 import UserEngagementAnalytics from './components/UserEngagementAnalytics';
 import FilterControls from './components/FilterControls';
 import SystemStatus from './components/SystemStatus';
+import DashboardOverviewAnalytics from './components/DashboardOverviewAnalytics';
+import ProfileAnalytics from './components/ProfileAnalytics';
 import './Analytics.css';
 
 const Analytics = () => {
@@ -58,10 +60,13 @@ const Analytics = () => {
   const [chartsData, setChartsData] = useState(null);
   const [projectHealthData, setProjectHealthData] = useState(null);
   const [performanceMetricsData, setPerformanceMetricsData] = useState(null);
-  const [codeQualityData, setCodeQualityData] = useState(null);
-  const [userEngagementData, setUserEngagementData] = useState(null);
+  const [codeQualityData, setCodeQualityData] = useState(null);  const [userEngagementData, setUserEngagementData] = useState(null);
   const [filterOptions, setFilterOptions] = useState(null);
   const [systemStatusData, setSystemStatusData] = useState(null);
+  const [dashboardAnalyticsData, setDashboardAnalyticsData] = useState(null);
+  const [taskAnalyticsData, setTaskAnalyticsData] = useState(null);
+  const [projectAnalyticsData, setProjectAnalyticsData] = useState(null);
+  const [profileAnalyticsData, setProfileAnalyticsData] = useState(null);
   const [dataLoading, setDataLoading] = useState(false);
   const [lastDataUpdate, setLastDataUpdate] = useState(null);
   
@@ -101,26 +106,30 @@ const Analytics = () => {
     loadSettings();
   }, []);
 
-  // Initial data load
+  // Initial data load  // Debounced data fetching to prevent excessive API calls
   useEffect(() => {
-    console.log('🚀 Analytics component mounted, fetching initial data...');
-    fetchAnalyticsData();
+    console.log('🚀 Analytics component mounted, loading with demo data...');
+    
+    // Load demo data immediately to show the UI
+    loadDemoData();
+    
+    // Optionally fetch real data after a delay (only if user stays on page)
+    const fetchTimer = setTimeout(() => {
+      console.log('🔄 Fetching essential analytics data only...');
+      fetchEssentialData();
+    }, 2000);
+
+    return () => clearTimeout(fetchTimer);
   }, []);
 
-  // Refresh data when filters change
+  // Debounced filter change handler
   useEffect(() => {
-    console.log('🔄 Filters changed, refreshing data...', { selectedTimeRange, selectedProject });
-    fetchAnalyticsData();
-  }, [selectedTimeRange, selectedProject]);
+    const debounceTimer = setTimeout(() => {
+      console.log('🔄 Filters changed, refreshing essential data...', { selectedTimeRange, selectedProject });
+      fetchEssentialData();
+    }, 1000); // 1 second debounce
 
-  // Simulate loading and data fetching
-  useEffect(() => {
-    setIsLoading(true);
-    const timer = setTimeout(() => {
-      setIsLoading(false);
-    }, 1500);
-
-    return () => clearTimeout(timer);
+    return () => clearTimeout(debounceTimer);
   }, [selectedTimeRange, selectedProject]);
 
   // Enhanced theme classes
@@ -868,35 +877,383 @@ const Analytics = () => {
     }
   };
 
+  // Fetch dashboard analytics data from API
+  const fetchDashboardAnalyticsData = async () => {
+    try {
+      console.log('🔄 Fetching dashboard analytics data...');
+      const params = {
+        period: selectedTimeRange === '7d' ? 'week' : selectedTimeRange === '30d' ? 'month' : 'quarter'
+      };
+      const response = await apiService.dashboard.getAnalytics(params);
+      console.log('📊 Dashboard analytics response:', response);
+      
+      if (response.data && response.data.success) {
+        const data = response.data.data;
+        console.log('✅ Dashboard analytics data received:', data);
+        setDashboardAnalyticsData(data);
+        console.log('✅ Dashboard analytics data loaded:', data);
+      } else {
+        console.log('⚠️ Dashboard analytics response format unexpected:', response.data);
+      }
+    } catch (error) {
+      console.error('❌ Error fetching dashboard analytics data:', error);
+      console.error('❌ Error details:', {
+        message: error.message,
+        status: error.response?.status,
+        statusText: error.response?.statusText,
+        data: error.response?.data
+      });
+      // Set fallback data
+      setDashboardAnalyticsData(null);
+    }
+  };
+
+  // Fetch task analytics data from API
+  const fetchTaskAnalyticsData = async () => {
+    try {
+      console.log('🔄 Fetching task analytics data...');
+      const params = {
+        period: selectedTimeRange === '7d' ? 'week' : selectedTimeRange === '30d' ? 'month' : 'quarter',
+        project_id: selectedProject !== 'all' ? selectedProject : null
+      };
+      const response = await apiService.dashboard.getTaskAnalytics(params);
+      console.log('📊 Task analytics response:', response);
+      
+      if (response.data && response.data.success) {
+        const data = response.data.data;
+        console.log('✅ Task analytics data received:', data);
+        setTaskAnalyticsData(data);
+        console.log('✅ Task analytics data loaded:', data);
+      } else {
+        console.log('⚠️ Task analytics response format unexpected:', response.data);
+      }
+    } catch (error) {
+      console.error('❌ Error fetching task analytics data:', error);
+      console.error('❌ Error details:', {
+        message: error.message,
+        status: error.response?.status,
+        statusText: error.response?.statusText,
+        data: error.response?.data
+      });
+      // Set fallback data
+      setTaskAnalyticsData(null);
+    }
+  };
+
+  // Fetch project analytics data from API
+  const fetchProjectAnalyticsData = async () => {
+    try {
+      console.log('🔄 Fetching project analytics data...');
+      const params = {
+        period: selectedTimeRange === '7d' ? 'week' : selectedTimeRange === '30d' ? 'month' : 'quarter',
+        timeframe: selectedTimeRange === '7d' ? 'week' : selectedTimeRange === '30d' ? 'month' : 'quarter'
+      };
+      const response = await apiService.dashboard.getProjectAnalytics(params);
+      console.log('📊 Project analytics response:', response);
+      
+      if (response.data && response.data.success) {
+        const data = response.data.data;
+        console.log('✅ Project analytics data received:', data);
+        setProjectAnalyticsData(data);
+        console.log('✅ Project analytics data loaded:', data);
+      } else {
+        console.log('⚠️ Project analytics response format unexpected:', response.data);
+      }
+    } catch (error) {
+      console.error('❌ Error fetching project analytics data:', error);
+      console.error('❌ Error details:', {
+        message: error.message,
+        status: error.response?.status,
+        statusText: error.response?.statusText,
+        data: error.response?.data
+      });
+      // Set fallback data
+      setProjectAnalyticsData(null);
+    }
+  };
+
+  // Fetch profile analytics data from API
+  const fetchProfileAnalyticsData = async () => {
+    try {
+      console.log('🔄 Fetching profile analytics data...');
+      const response = await apiService.profile.getAnalytics();
+      console.log('📊 Profile analytics response:', response);
+      
+      if (response.data && response.data.success) {
+        const data = response.data.data;
+        console.log('✅ Profile analytics data received:', data);
+        setProfileAnalyticsData(data);
+        console.log('✅ Profile analytics data loaded:', data);
+      } else {
+        console.log('⚠️ Profile analytics response format unexpected:', response.data);
+      }
+    } catch (error) {
+      console.error('❌ Error fetching profile analytics data:', error);
+      console.error('❌ Error details:', {
+        message: error.message,
+        status: error.response?.status,
+        statusText: error.response?.statusText,
+        data: error.response?.data
+      });
+      // Set fallback data
+      setProfileAnalyticsData(null);
+    }
+  };
+
+  // Load demo data immediately for better UX
+  const loadDemoData = () => {
+    console.log('📊 Loading demo data for immediate display...');
+    
+    // Set demo data for new analytics components
+    setSystemStatusData({
+      systemHealth: 'good',
+      healthScore: 85,
+      platform: {
+        totalUsers: 1234,
+        activeUsers: 567,
+        totalProjects: 89,
+        activeProjects: 23,
+        totalTasks: 456,
+        completedTasks: 234
+      },
+      alerts: [
+        { type: 'info', message: 'Demo data - Real data will load shortly' }
+      ]
+    });
+
+    setDashboardAnalyticsData({
+      overview: {
+        totalProjects: 89,
+        activeProjects: 23,
+        completedProjects: 45,
+        totalTasks: 456,
+        completedTasks: 234,
+        pendingTasks: 122
+      },
+      taskBreakdown: {
+        byStatus: {
+          todo: 122,
+          inProgress: 100,
+          completed: 234
+        },
+        byPriority: {
+          high: 45,
+          medium: 211,
+          low: 200
+        }
+      },
+      projectMetrics: {
+        onTime: 18,
+        delayed: 3,
+        atRisk: 2
+      }
+    });
+
+    setProfileAnalyticsData({
+      userStats: {
+        totalLogins: 156,
+        lastLoginDays: 2,
+        profileCompleteness: 85,
+        totalProjects: 12,
+        totalTasks: 89
+      },
+      activity: {
+        weeklyLogins: [5, 7, 4, 6, 8, 3, 4],
+        monthlyTasks: [23, 34, 28, 45]
+      },
+      insights: {
+        mostActiveDay: 'Friday',
+        averageSessionTime: '2h 15m',
+        preferredWorkingHours: '9AM - 5PM'
+      }
+    });
+
+    // Set loading to false since we have demo data
+    setDataLoading(false);
+    setIsLoading(false);
+  };
+
+  // Fetch only essential data to prevent server overload
+  const fetchEssentialData = async () => {
+    try {
+      console.log('🔄 Fetching essential analytics data only...');
+      setDataLoading(true);
+      
+      // Only fetch the 3 most important endpoints to prevent server overload
+      const essentialPromises = [
+        fetchSystemStatusData().catch(err => console.warn('System status failed:', err)),
+        fetchDashboardAnalyticsData().catch(err => console.warn('Dashboard analytics failed:', err)),
+        fetchProfileAnalyticsData().catch(err => console.warn('Profile analytics failed:', err))
+      ];
+
+      // Run essential calls in parallel but limit to 3 max
+      await Promise.allSettled(essentialPromises);
+      
+      console.log('✅ Essential analytics data loaded');
+      
+    } catch (error) {
+      console.error('❌ Error loading essential analytics data:', error);
+    } finally {
+      setDataLoading(false);
+      setIsLoading(false);
+    }
+  };
+
+  // Optional: Load additional data only when user explicitly requests it
+  const loadAdditionalData = async () => {
+    try {
+      console.log('🔄 Loading additional analytics data...');
+      setDataLoading(true);
+      
+      // Load additional data with proper delays
+      const additionalCalls = [
+        () => fetchSessionStats(),
+        () => fetchPerformanceData(),
+        () => fetchDeveloperMetrics(),
+        () => fetchChartsData(),
+        () => fetchFilterOptions()
+      ];
+
+      // Execute with 500ms delays to be gentle on server
+      for (let i = 0; i < additionalCalls.length; i++) {
+        try {
+          await additionalCalls[i]();
+          if (i < additionalCalls.length - 1) {
+            await new Promise(resolve => setTimeout(resolve, 500));
+          }
+        } catch (error) {
+          console.warn(`Additional data call ${i} failed:`, error);
+        }
+      }
+      
+      console.log('✅ Additional analytics data loaded');
+      
+    } catch (error) {
+      console.error('❌ Error loading additional analytics data:', error);
+    } finally {
+      setDataLoading(false);
+    }
+  };
+
   // Combined data fetching function
   const fetchAnalyticsData = async () => {
     try {
       console.log('🔄 Fetching analytics data...');
+      setDataLoading(true);
       setLastDataUpdate(new Date().toISOString());
       
-      // Fetch both datasets in parallel
-      await Promise.all([
-        fetchSessionStats(),
-        fetchPerformanceData(),
-        fetchDeveloperMetrics(),
-        fetchChartsData(),
-        fetchProjectHealthData(),
-        fetchPerformanceMetricsData(),
-        fetchCodeQualityData(),
-        fetchUserEngagementData(),
-        fetchFilterOptions(),
-        fetchSystemStatusData()
-      ]);
+      // Add delay between API calls to prevent rate limiting
+      const delayBetweenCalls = 200; // 200ms delay
       
-      console.log('✅ All analytics data loaded successfully');
+      // Fetch data with delays to prevent overwhelming the server
+      try {
+        await fetchSessionStats();
+        await new Promise(resolve => setTimeout(resolve, delayBetweenCalls));
+        
+        await fetchPerformanceData();
+        await new Promise(resolve => setTimeout(resolve, delayBetweenCalls));
+        
+        await fetchDeveloperMetrics();
+        await new Promise(resolve => setTimeout(resolve, delayBetweenCalls));
+        
+        await fetchChartsData();
+        await new Promise(resolve => setTimeout(resolve, delayBetweenCalls));
+        
+        await fetchProjectHealthData();
+        await new Promise(resolve => setTimeout(resolve, delayBetweenCalls));
+        
+        await fetchPerformanceMetricsData();
+        await new Promise(resolve => setTimeout(resolve, delayBetweenCalls));
+        
+        await fetchCodeQualityData();
+        await new Promise(resolve => setTimeout(resolve, delayBetweenCalls));
+        
+        await fetchUserEngagementData();
+        await new Promise(resolve => setTimeout(resolve, delayBetweenCalls));
+        
+        await fetchFilterOptions();
+        await new Promise(resolve => setTimeout(resolve, delayBetweenCalls));
+        
+        // Fetch new analytics endpoints with delays
+        await fetchSystemStatusData();
+        await new Promise(resolve => setTimeout(resolve, delayBetweenCalls));
+        
+        await fetchDashboardAnalyticsData();
+        await new Promise(resolve => setTimeout(resolve, delayBetweenCalls));
+        
+        await fetchTaskAnalyticsData();
+        await new Promise(resolve => setTimeout(resolve, delayBetweenCalls));
+        
+        await fetchProjectAnalyticsData();
+        await new Promise(resolve => setTimeout(resolve, delayBetweenCalls));
+        
+        await fetchProfileAnalyticsData();
+        
+      } catch (fetchError) {
+        console.warn('⚠️ Some analytics data failed to load, using fallback data');
+        
+        // Set fallback data for all analytics components
+        setSystemStatusData({
+          systemHealth: 'good',
+          healthScore: 85,
+          platform: {
+            totalUsers: 1234,
+            activeUsers: 567,
+            totalProjects: 89,
+            activeProjects: 23,
+            totalTasks: 456,
+            completedTasks: 234
+          },
+          alerts: [
+            { type: 'info', message: 'Backend server is not available - showing demo data' }
+          ]
+        });
+        
+        setDashboardAnalyticsData({
+          overview: {
+            totalProjects: 89,
+            activeProjects: 23,
+            completedTasks: 234,
+            totalUsers: 1234
+          },
+          projectDistribution: [
+            { status: 'active', count: 23, percentage: 25.8 },
+            { status: 'completed', count: 45, percentage: 50.6 },
+            { status: 'on-hold', count: 12, percentage: 13.5 },
+            { status: 'cancelled', count: 9, percentage: 10.1 }
+          ],
+          taskMetrics: {
+            totalTasks: 456,
+            completedTasks: 234,
+            inProgressTasks: 123,
+            pendingTasks: 99
+          }
+        });
+        
+        setProfileAnalyticsData({
+          profileCompleteness: 87,
+          skillsCount: 15,
+          experienceYears: 5,
+          projectsWorkedOn: 23,
+          tasksCompleted: 234,
+          averageRating: 4.6,
+          topSkills: [
+            { skill: 'JavaScript', level: 'Expert', projects: 15 },
+            { skill: 'React', level: 'Advanced', projects: 12 },
+            { skill: 'Node.js', level: 'Intermediate', projects: 8 }
+          ]
+        });
+      }
+      
+      console.log('✅ Analytics data loading completed');
     } catch (error) {
       console.error('❌ Error loading analytics data:', error);
+    } finally {
+      setDataLoading(false);
     }
   };
-
-  useEffect(() => {
-    fetchAnalyticsData();
-  }, [selectedTimeRange, selectedProject, refreshRate]);
+  // Removed duplicate useEffect that was causing excessive API calls
+  // The data fetching is now handled by the optimized useEffect hooks above
 
   const containerVariants = {
     hidden: { opacity: 0 },
@@ -1017,8 +1374,7 @@ const Analytics = () => {
           filterOptions={filterOptions}
         />
       </motion.div>      {/* KPI Cards Section */}
-      <motion.div className="analytics-kpi-section" variants={itemVariants}>
-        <DeveloperMetricsCard 
+      <motion.div className="analytics-kpi-section" variants={itemVariants}>        <DeveloperMetricsCard 
           timeRange={selectedTimeRange}
           project={selectedProject}
           settingsConfig={settingsConfig}
@@ -1026,6 +1382,9 @@ const Analytics = () => {
           performanceData={performanceData}
           developerMetrics={developerMetrics}
           chartsData={chartsData}
+          dashboardData={dashboardAnalyticsData}
+          taskData={taskAnalyticsData}
+          projectData={projectAnalyticsData}
           isLoading={dataLoading}
         />
       </motion.div>
@@ -1144,6 +1503,24 @@ const Analytics = () => {
         </div>
       </motion.div>
 
+      {/* Dashboard Overview Analytics Section */}
+      <motion.div className="analytics-dashboard-overview-section" variants={itemVariants}>
+        <DashboardOverviewAnalytics
+          timeRange={selectedTimeRange}
+          settingsConfig={settingsConfig}
+          dashboardData={dashboardAnalyticsData}
+          isLoading={dataLoading}
+        />
+      </motion.div>
+
+      {/* Profile Analytics Section */}
+      <motion.div className="analytics-profile-analytics-section" variants={itemVariants}>
+        <ProfileAnalytics
+          settingsConfig={settingsConfig}
+          profileData={profileAnalyticsData}
+          isLoading={dataLoading}
+        />
+      </motion.div>
       </div> {/* Close analytics-content */}
     </motion.div>
   );

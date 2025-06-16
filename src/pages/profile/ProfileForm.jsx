@@ -661,9 +661,9 @@ const ProfileForm = () => {
       }
     } catch (error) {
       console.error(`Error uploading ${type}:`, error);
-      setErrors(prev => ({
-        ...prev,
-        [type]: error.message || `Failed to upload ${type.replace('Image', ' image')}. Please try again.`      }));
+      setErrors(prev => ({        ...prev,
+        [type]: error.message || `Failed to upload ${type.replace('Image', ' image')}. Please try again.`
+      }));
     }
   };
 
@@ -671,14 +671,21 @@ const ProfileForm = () => {
   const handleDeleteResume = async (resumeId, resumeUrl) => {
       try {
         setIsUploading(true);
+        console.log('🗑️ Deleting resume:', { resumeId, resumeUrl });
         
         // Step 1: Delete from API
-        const response = await apiService.profile.resume.delete(resumeId);
-        
-        if (response.data && response.data.success) {
+        const response = await apiService.profile.resume.deleteItem(resumeId);
+        console.log('📡 API delete response:', response);
+          if (response.data && response.data.success) {
           // Step 2: Delete from Firebase Storage if it's a Firebase URL
           if (resumeUrl && resumeUrl.includes('firebase')) {
-            await firebaseStorageService.deleteImage(resumeUrl);
+            try {
+              await firebaseStorageService.deleteImage(resumeUrl);
+              console.log('Firebase resume deleted successfully');
+            } catch (firebaseError) {
+              console.warn('Failed to delete from Firebase Storage:', firebaseError);
+              // Continue with local state update even if Firebase deletion fails
+            }
           }
           
           // Step 3: Update local state
@@ -4292,11 +4299,10 @@ const ProfileForm = () => {
                 onClick={() => setShowResumeDeleteConfirm(null)}
               >
                 Cancel
-              </button>
-              <button 
+              </button>              <button 
                 type="button"
                 className="modal-btn modal-btn-delete"
-                onClick={() => handleDeleteResume(showResumeDeleteConfirm.id)}
+                onClick={() => handleDeleteResume(showResumeDeleteConfirm.id, showResumeDeleteConfirm.url)}
               >
                 Delete Resume
               </button>

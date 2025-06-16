@@ -1,42 +1,30 @@
 import React from 'react';
 import { motion } from 'framer-motion';
 import { 
-  FaChartBar, 
   FaProjectDiagram, 
   FaTasks, 
-  FaCalendarAlt,
+  FaCalendarAlt, 
   FaDollarSign,
   FaUsers,
+  FaChartLine,
   FaCheckCircle,
-  FaExclamationTriangle,
   FaClock,
+  FaExclamationTriangle,
   FaArrowUp,
   FaArrowDown,
-  FaTrendingUp,
-  FaCode,
-  FaBug,
-  FaRocket
+  FaMinus
 } from 'react-icons/fa';
 import Card from '../../../components/ui/Card';
 import Badge from '../../../components/ui/Badge';
 import './DashboardOverviewAnalytics.css';
 
 const DashboardOverviewAnalytics = ({ 
-  dashboardAnalyticsData,
-  taskAnalyticsData, 
-  projectAnalyticsData,
+  dashboardData, 
   isLoading = false, 
-  timeRange = '7d',
-  settingsConfig = {} 
+  timeRange = '7d',  settingsConfig = {} 
 }) => {
-  console.log('🔍 DashboardOverviewAnalytics render:', { 
-    dashboardAnalyticsData, 
-    taskAnalyticsData, 
-    projectAnalyticsData, 
-    isLoading 
-  });
 
-  if (isLoading || (!dashboardAnalyticsData && !taskAnalyticsData && !projectAnalyticsData)) {
+  if (isLoading || !dashboardData) {
     return (
       <motion.div
         initial={{ opacity: 0, y: 20 }}
@@ -45,12 +33,12 @@ const DashboardOverviewAnalytics = ({
         className="dashboard-overview-analytics-container"
       >
         <Card className="dashboard-overview-analytics-card loading">
-          <div className="dashboard-overview-header">
-            <h3>Dashboard Overview Analytics</h3>
-            <div className="loading-spinner"></div>
+          <div className="dashboard-overview-analytics-header">
+            <h3>Dashboard Overview</h3>
+            <div className="dashboard-overview-loading-spinner"></div>
           </div>
-          <div className="dashboard-overview-content">
-            <div className="loading-placeholder">Loading dashboard analytics...</div>
+          <div className="dashboard-overview-analytics-content">
+            <div className="dashboard-overview-loading-placeholder"></div>
           </div>
         </Card>
       </motion.div>
@@ -75,307 +63,349 @@ const DashboardOverviewAnalytics = ({
   const formatPercentage = (num) => {
     return `${(num || 0).toFixed(1)}%`;
   };
+  const getTrendIcon = (current, target) => {
+    if (current > target) return <FaArrowUp className="trend-icon positive" />;
+    if (current < target) return <FaArrowDown className="trend-icon negative" />;
+    return <FaMinus className="trend-icon neutral" />;
+  };
 
-  // Extract data from responses
-  const dashboardData = dashboardAnalyticsData?.analytics || {};
-  const taskData = taskAnalyticsData?.analytics || {};
-  const projectData = projectAnalyticsData?.analytics || {};
+  const getStatusColor = (status) => {
+    switch (status?.toLowerCase()) {
+      case 'completed':
+        return 'success';
+      case 'in-progress':
+        return 'warning';
+      case 'planning':
+        return 'info';
+      default:
+        return 'neutral';
+    }
+  };
 
+  const getPriorityColor = (priority) => {
+    switch (priority?.toLowerCase()) {
+      case 'high':
+        return 'error';
+      case 'medium':
+        return 'warning';
+      case 'low':
+        return 'success';
+      default:
+        return 'neutral';
+    }
+  };
   return (
     <motion.div
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.6 }}
-      className="dashboard-overview-analytics-container"
+      transition={{ duration: 0.6 }}      className="dashboard-overview-analytics-container"
     >
       <Card className="dashboard-overview-analytics-card">
-        <div className="dashboard-overview-header">
-          <div className="dashboard-overview-title">
-            <FaChartBar className="header-icon" />
+        <div className="dashboard-overview-analytics-header">
+          <div className="dashboard-overview-analytics-title">
+            <FaChartLine className="dashboard-overview-header-icon" />
             <h3>Dashboard Overview Analytics</h3>
-          </div>
-          <div className="dashboard-overview-period">
-            <Badge variant="primary">
-              {dashboardData.period || projectData.period || 'Current Period'}
+          </div>          <div className="dashboard-overview-period-badge">
+            <Badge variant="info" size="sm">
+              {dashboardData?.analytics?.period || timeRange}
             </Badge>
-            {dashboardData.date_range && (
-              <span className="date-range">
-                {dashboardData.date_range.start_date} - {dashboardData.date_range.end_date}
-              </span>
-            )}
           </div>
-        </div>
+        </div>        <div className="dashboard-overview-analytics-content">
+          {/* Summary Statistics */}
+          <div className="dashboard-overview-section">
+            <h4 className="dashboard-overview-section-title">
+              <FaProjectDiagram className="dashboard-overview-section-icon" />
+              Summary Statistics
+            </h4>            <div className="dashboard-overview-summary-grid">
+              <div className="dashboard-overview-summary-item">
+                <div className="dashboard-overview-summary-icon projects">
+                  <FaProjectDiagram />
+                </div>
+                <div className="dashboard-overview-summary-details">
+                  <span className="dashboard-overview-summary-value">
+                    {formatNumber(dashboardData?.analytics?.summary?.total_projects || 0)}
+                  </span>
+                  <span className="dashboard-overview-summary-label">Total Projects</span>
+                  <span className="dashboard-overview-summary-sub">
+                    {formatPercentage(dashboardData?.analytics?.summary?.task_completion_rate || 0)} completion rate
+                  </span>
+                </div>
+              </div>
 
-        <div className="dashboard-overview-content">
-          {/* Summary Metrics */}
-          <div className="overview-section">
-            <h4 className="section-title">
-              <FaTrendingUp className="section-icon" />
-              Summary Overview
+              <div className="dashboard-overview-summary-item">
+                <div className="dashboard-overview-summary-icon tasks">
+                  <FaTasks />
+                </div>
+                <div className="dashboard-overview-summary-details">
+                  <span className="dashboard-overview-summary-value">
+                    {formatNumber(dashboardData?.analytics?.summary?.total_tasks || 0)}
+                  </span>
+                  <span className="dashboard-overview-summary-label">Total Tasks</span>
+                  <span className="dashboard-overview-summary-sub">
+                    {formatNumber(dashboardData?.analytics?.summary?.completed_tasks || 0)} completed
+                  </span>
+                </div>
+              </div>
+
+              <div className="dashboard-overview-summary-item">
+                <div className="dashboard-overview-summary-icon events">
+                  <FaCalendarAlt />
+                </div>
+                <div className="dashboard-overview-summary-details">
+                  <span className="dashboard-overview-summary-value">
+                    {formatNumber(dashboardData?.analytics?.summary?.total_events || 0)}
+                  </span>
+                  <span className="dashboard-overview-summary-label">Calendar Events</span>
+                  <span className="dashboard-overview-summary-sub">this period</span>
+                </div>
+              </div>
+
+              <div className="dashboard-overview-summary-item">
+                <div className="dashboard-overview-summary-icon budget">
+                  <FaDollarSign />
+                </div>
+                <div className="dashboard-overview-summary-details">
+                  <span className="dashboard-overview-summary-value">
+                    {formatCurrency(dashboardData?.analytics?.budget_analytics?.total_budget || 0)}
+                  </span>
+                  <span className="dashboard-overview-summary-label">Total Budget</span>
+                  <span className="dashboard-overview-summary-sub">
+                    {formatNumber(dashboardData?.analytics?.budget_analytics?.projects_with_budget || 0)} projects
+                  </span>
+                </div>
+              </div>
+            </div>
+          </div>          {/* Project Analytics */}
+          <div className="dashboard-overview-section">
+            <h4 className="dashboard-overview-section-title">
+              <FaProjectDiagram className="dashboard-overview-section-icon" />
+              Project Distribution
             </h4>
-            <div className="metrics-grid summary-metrics">
-              <div className="metric-card projects-metric">
-                <div className="metric-icon-wrapper">
-                  <FaProjectDiagram className="metric-icon" />
+            <div className="dashboard-overview-distribution-grid">              <div className="dashboard-overview-distribution-card">
+                <h5>Status Distribution</h5>
+                <div className="dashboard-overview-distribution-items">
+                  {dashboardData?.analytics?.project_analytics?.status_distribution && 
+                    Object.entries(dashboardData.analytics.project_analytics.status_distribution).map(([status, count]) => {
+                      const totalProjects = dashboardData?.analytics?.summary?.total_projects || 0;
+                      const percentage = totalProjects > 0 ? ((count / totalProjects) * 100).toFixed(1) : 0;
+                      return (
+                        <div key={status} className="dashboard-overview-project-status-item">
+                          <div className="dashboard-overview-status-header">
+                            <Badge variant={getStatusColor(status)} size="sm">
+                              {status.charAt(0).toUpperCase() + status.slice(1)}
+                            </Badge>
+                            <span className="dashboard-overview-status-percentage">{percentage}%</span>
+                          </div>
+                          <div className="dashboard-overview-status-details">
+                            <span className="dashboard-overview-status-count">{count}</span>
+                            <span className="dashboard-overview-status-label">projects</span>
+                          </div>
+                          <div className="dashboard-overview-status-bar">
+                            <div 
+                              className={`dashboard-overview-status-fill dashboard-overview-status-${status}`}
+                              style={{ width: `${percentage}%` }}
+                            ></div>
+                          </div>
+                        </div>
+                      );
+                    })
+                  }
+                  {!dashboardData?.analytics?.project_analytics?.status_distribution && dashboardData?.projectDistribution?.map((item, index) => (
+                    <div key={item.status || index} className="dashboard-overview-project-status-item">
+                      <div className="dashboard-overview-status-header">
+                        <Badge variant={getStatusColor(item.status)} size="sm">
+                          {item.status}
+                        </Badge>
+                        <span className="dashboard-overview-status-percentage">{item.percentage}%</span>
+                      </div>
+                      <div className="dashboard-overview-status-details">
+                        <span className="dashboard-overview-status-count">{item.count}</span>
+                        <span className="dashboard-overview-status-label">projects</span>
+                      </div>
+                      <div className="dashboard-overview-status-bar">
+                        <div 
+                          className={`dashboard-overview-status-fill dashboard-overview-status-${item.status?.toLowerCase()}`}
+                          style={{ width: `${item.percentage}%` }}
+                        ></div>
+                      </div>
+                    </div>
+                  ))}
                 </div>
-                <div className="metric-details">
-                  <span className="metric-value">
-                    {formatNumber(dashboardData.summary?.total_projects || projectData.summary?.total_projects || 0)}
-                  </span>
-                  <span className="metric-label">Total Projects</span>
-                  <span className="metric-sub">
-                    {formatNumber(projectData.summary?.active_projects || 0)} active
-                  </span>
+              </div>              <div className="dashboard-overview-distribution-card">
+                <h5>Priority Distribution</h5>
+                <div className="dashboard-overview-distribution-items">
+                  {dashboardData?.analytics?.project_analytics?.priority_distribution && 
+                    Object.keys(dashboardData.analytics.project_analytics.priority_distribution).length > 0 ? (
+                    Object.entries(dashboardData.analytics.project_analytics.priority_distribution).map(([priority, count]) => {
+                      const totalProjects = dashboardData?.analytics?.summary?.total_projects || 0;
+                      const percentage = totalProjects > 0 ? ((count / totalProjects) * 100).toFixed(1) : 0;
+                      return (
+                        <div key={priority} className="dashboard-overview-project-priority-item">
+                          <div className="dashboard-overview-priority-header">
+                            <Badge variant={getPriorityColor(priority)} size="sm">
+                              {priority.charAt(0).toUpperCase() + priority.slice(1)} Priority
+                            </Badge>
+                            <span className="dashboard-overview-priority-percentage">{percentage}%</span>
+                          </div>
+                          <div className="dashboard-overview-priority-details">
+                            <span className="dashboard-overview-priority-count">{count}</span>
+                            <span className="dashboard-overview-priority-label">projects</span>
+                          </div>
+                          <div className="dashboard-overview-priority-indicator">
+                            <div className={`dashboard-overview-priority-icon dashboard-overview-priority-${priority}`}>
+                              {priority === 'high' ? '🔴' : priority === 'medium' ? '🟡' : '🟢'}
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })
+                  ) : (                    <div className="dashboard-overview-no-data">
+                      <span>No priority data available</span>
+                    </div>
+                  )}
                 </div>
               </div>
-              
-              <div className="metric-card tasks-metric">
-                <div className="metric-icon-wrapper">
-                  <FaTasks className="metric-icon" />
+            </div>
+          </div>          {/* Task Analytics */}
+          <div className="dashboard-overview-section">
+            <h4 className="dashboard-overview-section-title">
+              <FaTasks className="dashboard-overview-section-icon" />
+              Task Distribution
+            </h4>
+            <div className="dashboard-overview-distribution-grid">              <div className="dashboard-overview-distribution-card">
+                <h5>Status Distribution</h5>
+                <div className="dashboard-overview-distribution-items">
+                  {dashboardData?.analytics?.task_analytics?.status_distribution && 
+                    Object.entries(dashboardData.analytics.task_analytics.status_distribution).map(([status, count]) => {
+                      const totalTasks = dashboardData?.analytics?.summary?.total_tasks || 0;
+                      const percentage = totalTasks > 0 ? ((count / totalTasks) * 100).toFixed(1) : 0;
+                      return (
+                        <div key={status} className="dashboard-overview-task-status-item">
+                          <div className="dashboard-overview-task-status-header">
+                            <Badge variant={getStatusColor(status)} size="sm">
+                              {status === 'done' ? 'Completed' : status === 'todo' ? 'To Do' : status.charAt(0).toUpperCase() + status.slice(1)}
+                            </Badge>
+                            <span className="dashboard-overview-task-status-percentage">{percentage}%</span>
+                          </div>
+                          <div className="dashboard-overview-task-status-details">
+                            <span className="dashboard-overview-task-status-count">{count}</span>
+                            <span className="dashboard-overview-task-status-label">tasks</span>
+                          </div>
+                          <div className="dashboard-overview-task-progress-bar">
+                            <div 
+                              className={`dashboard-overview-task-progress-fill dashboard-overview-task-${status}`}
+                              style={{ width: `${percentage}%` }}
+                            ></div>
+                          </div>
+                        </div>
+                      );
+                    })
+                  }
                 </div>
-                <div className="metric-details">
-                  <span className="metric-value">
-                    {formatNumber(dashboardData.summary?.total_tasks || taskData.taskMetrics?.totalTasks || 0)}
-                  </span>
-                  <span className="metric-label">Total Tasks</span>
-                  <span className="metric-sub">
-                    {formatNumber(dashboardData.summary?.completed_tasks || 0)} completed
-                  </span>
-                </div>
-              </div>
-              
-              <div className="metric-card events-metric">
-                <div className="metric-icon-wrapper">
-                  <FaCalendarAlt className="metric-icon" />
-                </div>
-                <div className="metric-details">
-                  <span className="metric-value">
-                    {formatNumber(dashboardData.summary?.total_events || 0)}
-                  </span>
-                  <span className="metric-label">Total Events</span>
-                  <span className="metric-sub">Calendar events</span>
-                </div>
-              </div>
-              
-              <div className="metric-card completion-metric">
-                <div className="metric-icon-wrapper">
-                  <FaCheckCircle className="metric-icon" />
-                </div>
-                <div className="metric-details">
-                  <span className="metric-value">
-                    {formatPercentage(dashboardData.summary?.task_completion_rate || taskData.productivity?.completionRate || 0)}
-                  </span>
-                  <span className="metric-label">Completion Rate</span>
-                  <span className="metric-sub">Tasks completed</span>
+              </div>              <div className="dashboard-overview-distribution-card">
+                <h5>Priority Distribution</h5>
+                <div className="dashboard-overview-distribution-items">
+                  {dashboardData?.analytics?.task_analytics?.priority_distribution && 
+                    Object.keys(dashboardData.analytics.task_analytics.priority_distribution).length > 0 ? (
+                    Object.entries(dashboardData.analytics.task_analytics.priority_distribution).map(([priority, count]) => {
+                      const totalTasks = dashboardData?.analytics?.summary?.total_tasks || 0;
+                      const percentage = totalTasks > 0 ? ((count / totalTasks) * 100).toFixed(1) : 0;
+                      return (
+                        <div key={priority} className="dashboard-overview-task-priority-item">
+                          <div className="dashboard-overview-task-priority-header">
+                            <Badge variant={getPriorityColor(priority)} size="sm">
+                              {priority.charAt(0).toUpperCase() + priority.slice(1)} Priority
+                            </Badge>
+                            <span className="dashboard-overview-task-priority-percentage">{percentage}%</span>
+                          </div>
+                          <div className="dashboard-overview-task-priority-details">
+                            <span className="dashboard-overview-task-priority-count">{count}</span>
+                            <span className="dashboard-overview-task-priority-label">tasks</span>
+                          </div>
+                          <div className="dashboard-overview-task-priority-indicator">
+                            <div className={`dashboard-overview-task-priority-icon dashboard-overview-task-priority-${priority}`}>
+                              {priority === 'high' ? '⚡' : priority === 'medium' ? '📋' : '📝'}
+                            </div>
+                            <div className="dashboard-overview-task-priority-urgency">
+                              {priority === 'high' ? 'Urgent' : priority === 'medium' ? 'Normal' : 'Low Priority'}
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })
+                  ) : (
+                    <div className="dashboard-overview-no-data">                      <span>No priority data available</span>
+                    </div>
+                  )}
                 </div>
               </div>
             </div>
           </div>
-
-          {/* Project Analytics */}
-          {projectData && Object.keys(projectData).length > 0 && (
-            <div className="overview-section">
-              <h4 className="section-title">
-                <FaProjectDiagram className="section-icon" />
-                Project Analytics
-              </h4>
-              <div className="analytics-grid">
-                <div className="analytics-card">
-                  <h5>Status Distribution</h5>
-                  <div className="status-distribution">
-                    {Object.entries(projectData.statusDistribution || {}).map(([status, count]) => (
-                      <div key={status} className="status-item">
-                        <span className="status-label">{status}</span>
-                        <span className="status-count">{count}</span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-
-                <div className="analytics-card">
-                  <h5>Priority Breakdown</h5>
-                  <div className="priority-distribution">
-                    {Object.entries(projectData.priorityDistribution || {}).map(([priority, count]) => (
-                      <div key={priority} className={`priority-item priority-${priority}`}>
-                        <span className="priority-label">{priority}</span>
-                        <span className="priority-count">{count}</span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-
-                <div className="analytics-card">
-                  <h5>Budget Overview</h5>
-                  <div className="budget-stats">
-                    <div className="budget-item">
-                      <span className="budget-label">Total Budget</span>
-                      <span className="budget-value">
-                        {formatCurrency(dashboardData.budget_analytics?.total_budget || projectData.budgetStats?.total || 0)}
-                      </span>
-                    </div>
-                    <div className="budget-item">
-                      <span className="budget-label">Average Budget</span>
-                      <span className="budget-value">
-                        {formatCurrency(dashboardData.budget_analytics?.average_budget || projectData.budgetStats?.average || 0)}
-                      </span>
-                    </div>
-                    <div className="budget-item">
-                      <span className="budget-label">Projects with Budget</span>
-                      <span className="budget-value">
-                        {projectData.budgetStats?.projectsWithBudget || 0}
-                      </span>
-                    </div>
-                  </div>
-                </div>
-
-                {projectData.topTechnologies && projectData.topTechnologies.length > 0 && (
-                  <div className="analytics-card">
-                    <h5>Top Technologies</h5>
-                    <div className="technologies-list">
-                      {projectData.topTechnologies.slice(0, 5).map((tech, index) => (
-                        <div key={index} className="technology-item">
-                          <FaCode className="tech-icon" />
-                          <span className="tech-name">{tech.technology}</span>
-                          <span className="tech-count">{tech.count}</span>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-              </div>
-            </div>
-          )}
-
-          {/* Task Analytics */}
-          {taskData && Object.keys(taskData).length > 0 && (
-            <div className="overview-section">
-              <h4 className="section-title">
-                <FaTasks className="section-icon" />
-                Task Analytics
-              </h4>
-              <div className="analytics-grid">
-                <div className="analytics-card">
-                  <h5>Task Status</h5>
-                  <div className="task-status-distribution">
-                    {Object.entries(taskData.statusDistribution || {}).map(([status, count]) => (
-                      <div key={status} className={`task-status-item status-${status}`}>
-                        <span className="status-label">{status}</span>
-                        <span className="status-count">{count}</span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-
-                <div className="analytics-card">
-                  <h5>Priority Distribution</h5>
-                  <div className="task-priority-distribution">
-                    {Object.entries(taskData.priorityDistribution || {}).map(([priority, count]) => (
-                      <div key={priority} className={`task-priority-item priority-${priority}`}>
-                        <span className="priority-label">{priority}</span>
-                        <span className="priority-count">{count}</span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-
-                <div className="analytics-card">
-                  <h5>Productivity Metrics</h5>
-                  <div className="productivity-stats">
-                    {taskData.productivity && (
-                      <>
-                        <div className="productivity-item">
-                          <span className="productivity-label">Estimated Hours</span>
-                          <span className="productivity-value">{taskData.productivity.totalEstimatedHours || 0}h</span>
-                        </div>
-                        <div className="productivity-item">
-                          <span className="productivity-label">Actual Hours</span>
-                          <span className="productivity-value">{taskData.productivity.totalActualHours || 0}h</span>
-                        </div>
-                        <div className="productivity-item">
-                          <span className="productivity-label">Overdue Rate</span>
-                          <span className="productivity-value">{formatPercentage(taskData.productivity.overdueRate || 0)}</span>
-                        </div>
-                        <div className="productivity-item">
-                          <span className="productivity-label">Assignment Rate</span>
-                          <span className="productivity-value">{formatPercentage(taskData.productivity.assignmentRate || 0)}</span>
-                        </div>
-                      </>
-                    )}
-                  </div>
-                </div>
-
-                {taskData.taskMetrics && (
-                  <div className="analytics-card">
-                    <h5>Task Metrics</h5>
-                    <div className="task-metrics-grid">
-                      <div className="task-metric-item">
-                        <FaExclamationTriangle className="metric-icon overdue" />
-                        <div className="metric-content">
-                          <span className="metric-value">{taskData.taskMetrics.overdueTasks || 0}</span>
-                          <span className="metric-label">Overdue</span>
-                        </div>
-                      </div>
-                      <div className="task-metric-item">
-                        <FaUsers className="metric-icon assigned" />
-                        <div className="metric-content">
-                          <span className="metric-value">{taskData.taskMetrics.assignedTasks || 0}</span>
-                          <span className="metric-label">Assigned</span>
-                        </div>
-                      </div>
-                      <div className="task-metric-item">
-                        <FaRocket className="metric-icon priority" />
-                        <div className="metric-content">
-                          <span className="metric-value">{taskData.taskMetrics.highPriorityTasks || 0}</span>
-                          <span className="metric-label">High Priority</span>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                )}
-              </div>
-            </div>
-          )}
 
           {/* Calendar Analytics */}
-          {dashboardData.calendar_analytics && (
-            <div className="overview-section">
-              <h4 className="section-title">
-                <FaCalendarAlt className="section-icon" />
-                Calendar Analytics
-              </h4>
-              <div className="analytics-grid">
-                <div className="analytics-card">
-                  <h5>Event Types</h5>
-                  <div className="event-type-distribution">
-                    {Object.entries(dashboardData.calendar_analytics.event_type_distribution || {}).map(([type, count]) => (
-                      <div key={type} className="event-type-item">
-                        <span className="event-type-label">{type}</span>
-                        <span className="event-type-count">{count}</span>
+          <div className="dashboard-overview-section">
+            <h4 className="dashboard-overview-section-title">
+              <FaCalendarAlt className="dashboard-overview-section-icon" />
+              Calendar Events
+            </h4>            <div className="dashboard-overview-calendar-grid">
+              {dashboardData?.analytics?.calendar_analytics?.event_type_distribution && 
+                Object.entries(dashboardData.analytics.calendar_analytics.event_type_distribution).map(([type, count]) => {
+                  const totalEvents = dashboardData?.analytics?.summary?.total_events || 0;
+                  const percentage = totalEvents > 0 ? ((count / totalEvents) * 100).toFixed(1) : 0;
+                  const eventIcon = {
+                    'appointment': '📅',
+                    'conference': '🎤',
+                    'meeting': '👥',
+                    'milestone': '🎯',
+                    'project': '📊',
+                    'task': '✅'
+                  };
+                  
+                  return (
+                    <div key={type} className="dashboard-overview-calendar-event-item">
+                      <div className="dashboard-overview-calendar-event-header">
+                        <div className="dashboard-overview-calendar-event-icon">
+                          {eventIcon[type] || '📝'}
+                        </div>
+                        <div className="dashboard-overview-calendar-event-info">
+                          <span className="dashboard-overview-calendar-event-count">{count}</span>
+                          <span className="dashboard-overview-calendar-event-type">
+                            {type.charAt(0).toUpperCase() + type.slice(1)}
+                          </span>
+                        </div>
                       </div>
-                    ))}
+                      <div className="dashboard-overview-calendar-event-details">
+                        <div className="dashboard-overview-calendar-event-percentage">
+                          {percentage}% of events
+                        </div>
+                        <div className="dashboard-overview-calendar-event-bar">
+                          <div 
+                            className={`dashboard-overview-calendar-event-fill dashboard-overview-calendar-${type}`}
+                            style={{ width: `${percentage}%` }}
+                          ></div>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })
+              }
+              {!dashboardData?.analytics?.calendar_analytics?.event_type_distribution && dashboardData?.calendarEvents?.map((event, index) => (
+                <div key={event.type || index} className="dashboard-overview-calendar-item">
+                  <div className="dashboard-overview-calendar-icon">
+                    <FaCalendarAlt />
+                  </div>
+                  <div className="dashboard-overview-calendar-details">
+                    <span className="dashboard-overview-calendar-count">{event.count}</span>
+                    <span className="dashboard-overview-calendar-type">{event.type}</span>
                   </div>
                 </div>
-
-                <div className="analytics-card">
-                  <h5>Events Timeline</h5>
-                  <div className="events-timeline">
-                    {dashboardData.calendar_analytics.events_over_time?.slice(-5).map((event, index) => (
-                      <div key={index} className="timeline-item">
-                        <span className="timeline-date">{event.date}</span>
-                        <span className="timeline-count">{event.count} events</span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              </div>
+              ))}
             </div>
-          )}
-
-          {/* Footer */}
+          </div>          {/* Time Range Info */}
           <div className="dashboard-overview-footer">
-            <span className="last-updated">
-              <FaClock className="clock-icon" />
-              Last updated: {new Date().toLocaleString()}
+            <span className="dashboard-overview-time-range">
+              <FaClock className="dashboard-overview-clock-icon" />
+              Period: {dashboardData?.analytics?.date_range?.start_date || 'Unknown'} to {dashboardData?.analytics?.date_range?.end_date || 'Unknown'}
             </span>
           </div>
         </div>

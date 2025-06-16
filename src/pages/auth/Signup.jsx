@@ -48,11 +48,6 @@ const Signup = () => {
   const canvasRef = useRef(null);
   const formRef = useRef(null);
   
-  // Redirect if already logged in
-  if (isLoggedIn) {
-    return <Navigate to="/dashboard" replace />;
-  }
-  
   // Form validation schema with enhanced validation
   const validateForm = createFormValidator({
     name: (value) => {
@@ -312,9 +307,13 @@ const Signup = () => {
     
     return () => {
       card.removeEventListener('mousemove', handleMouseMove);
-      card.removeEventListener('mouseleave', handleMouseLeave);
-    };
+      card.removeEventListener('mouseleave', handleMouseLeave);    };
   }, []);
+
+  // Redirect if already logged in
+  if (isLoggedIn) {
+    return <Navigate to="/dashboard" replace />;
+  }
 
   // Toggle cyberpunk theme
   const toggleCyberpunkTheme = () => {

@@ -596,9 +596,14 @@ const apiService = {
       
       // Availability and job preferences
       availability: (data) => apiClient.put('/profile/availability', data),
-      
-      // Profile visibility settings
+        // Profile visibility settings
       visibility: (data) => apiClient.put('/profile/visibility', data),
+    },
+
+    // Get profile analytics
+    getAnalytics: () => {
+      console.log('📊 Fetching profile analytics');
+      return apiClient.get('/profile/analytics');
     },
   },// Project services
   projects: {
@@ -730,7 +735,23 @@ const apiService = {
       console.log('📊 Fetching performance metrics:', params);
       return apiClient.get('/dashboard/performance', { params });
     },
-  },    // Tasks services - Enhanced with flexible format support
+    
+    // Get comprehensive dashboard analytics
+    getAnalytics: (params = {}) => {
+      console.log('📊 Fetching dashboard analytics:', params);
+      return apiClient.get('/dashboard/analytics', { params });
+    },
+
+    // Get task analytics
+    getTaskAnalytics: (params = {}) => {
+      console.log('📊 Fetching task analytics:', params);
+      return apiClient.get('/dashboard/tasks/analytics', { params });
+    },    // Get project analytics  
+    getProjectAnalytics: (params = {}) => {
+      console.log('📊 Fetching project analytics:', params);
+      return apiClient.get('/dashboard/projects/analytics', { params });
+    },
+  },// Tasks services - Enhanced with flexible format support
   tasks: {
     // Get all tasks with optional filtering
     getAll: (params = {}) => apiClient.get('/tasks', { params }),
@@ -1084,6 +1105,7 @@ const apiService = {
       return apiClient.get('/analytics/system-status');
     },
   },
+
 };
 
 export default apiService;

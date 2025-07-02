@@ -1,0 +1,90 @@
+<svg width="400" height="240" viewBox="0 0 400 240" xmlns="http://www.w3.org/2000/svg">
+  
+  <!-- Main logo composition -->
+  <g transform="translate(50, 30)">
+    
+    <!-- Sophisticated "BOE" monogram -->
+    <g>
+      
+      <!-- "B" - Architecturally perfect -->
+      <g fill="#1e3a8a">
+        <rect x="0" y="0" width="12" height="80"/>
+        <rect x="0" y="0" width="35" height="12"/>
+        <rect x="35" y="0" width="12" height="25"/>
+        <rect x="25" y="25" width="22" height="12"/>
+        <rect x="0" y="37" width="40" height="12"/>
+        <rect x="40" y="37" width="12" height="31"/>
+        <rect x="0" y="68" width="47" height="12"/>
+      </g>
+      
+      <!-- "O" - Perfect circle, seamlessly connected -->
+      <circle cx="85" cy="40" r="28" fill="none" stroke="#0ea5e9" stroke-width="12"/>
+      
+      <!-- "E" - Clean, modern structure -->
+      <g fill="#1e3a8a" transform="translate(105, 12)">
+        <rect x="0" y="0" width="12" height="56"/>
+        <rect x="0" y="0" width="32" height="12"/>
+        <rect x="0" y="22" width="28" height="12"/>
+        <rect x="0" y="44" width="35" height="12"/>
+      </g>
+      
+      <!-- Seamless connections -->
+      <rect x="47" y="35" width="20" height="10" fill="#0ea5e9"/>
+      <rect x="100" y="35" width="17" height="10" fill="#0ea5e9"/>
+      
+      <!-- Subtle design enhancement -->
+      <rect x="3" y="3" width="3" height="74" fill="#3b82f6" opacity="0.4"/>
+      <rect x="108" y="15" width="3" height="50" fill="#3b82f6" opacity="0.4"/>
+      
+    </g>
+    
+    <!-- Professional typography - properly positioned -->
+    <g transform="translate(0, 110)">
+      <text x="0" y="0" 
+            font-family="Helvetica, Arial, sans-serif" 
+            font-size="28" 
+            font-weight="700" 
+            fill="#1e3a8a" 
+            letter-spacing="3px">BRAIN</text>
+      
+      <text x="120" y="0" 
+            font-family="Helvetica, Arial, sans-serif" 
+            font-size="28" 
+            font-weight="300" 
+            fill="#475569" 
+            letter-spacing="3px">OGEMBO</text>
+      
+      <!-- Elegant separator -->
+      <line x1="110" y1="-3" x2="110" y2="3" stroke="#0ea5e9" stroke-width="3"/>
+      
+      <!-- Professional tagline -->
+      <text x="0" y="22" 
+            font-family="Helvetica, Arial, sans-serif" 
+            font-size="9" 
+            font-weight="400" 
+            fill="#64748b" 
+            letter-spacing="1.5px">FULL-STACK DEVELOPER</text>
+            
+      <!-- Domain reference -->
+      <text x="0" y="38" 
+            font-family="'Courier New', monospace" 
+            font-size="8" 
+            fill="#0ea5e9" 
+            opacity="0.8">brainogembo.codes</text>
+    </g>
+    
+    <!-- Iconic accent elements -->
+    <circle cx="170" cy="20" r="2.5" fill="#0ea5e9"/>
+    <rect x="168" y="25" width="5" height="12" fill="#1e3a8a"/>
+    
+    <!-- Subtle geometric accent -->
+    <g transform="translate(180, 15)" opacity="0.6">
+      <polygon points="0,0 8,4 0,8" fill="#0ea5e9"/>
+    </g>
+    
+  </g>
+  
+  <!-- Professional border accent -->
+  <line x1="50" y1="200" x2="350" y2="200" stroke="#0ea5e9" stroke-width="1" opacity="0.3"/>
+  
+</svg>

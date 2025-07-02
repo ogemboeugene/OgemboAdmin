@@ -1,0 +1,54 @@
+name: Keep Server Alive
+
+# Run every 6 hours to keep the server active
+on:
+  schedule:
+    # Runs every 6 hours: 12:00 AM, 6:00 AM, 12:00 PM, 6:00 PM UTC
+    - cron: '0 0,6,12,18 * * *'
+  # Allow manual trigger
+  workflow_dispatch:
+
+jobs:
+  keep-alive:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Keep Server Alive
+      run: |
+        echo "Pinging server to keep it alive..."
+        
+        # Ping the main site
+        response=$(curl -s -o /dev/null -w "%{http_code}" https://brainogembo.codes)
+        echo "Main site response: $response"
+        
+        # Ping the health check endpoint
+        health_response=$(curl -s -o /dev/null -w "%{http_code}" https://brainogembo.codes/health.html)
+        echo "Health check response: $health_response"
+        
+        # Ping the keep-alive endpoint
+        keepalive_response=$(curl -s -o /dev/null -w "%{http_code}" https://brainogembo.codes/keep-alive.html)
+        echo "Keep-alive endpoint response: $keepalive_response"
+        
+        # Make a few more requests to simulate user activity
+        for i in {1..3}; do
+          echo "Making additional request $i..."
+          curl -s -o /dev/null https://brainogembo.codes > /dev/null
+          sleep 2
+        done
+        
+        # Check if all responses are successful
+        if [ "$response" = "200" ] && [ "$health_response" = "200" ] && [ "$keepalive_response" = "200" ]; then
+          echo "✅ All endpoints are healthy and server is active!"
+        else
+          echo "⚠️ Some endpoints may have issues."
+          echo "Main: $response, Health: $health_response, Keep-alive: $keepalive_response"
+          # Don't exit with error to avoid too many notifications
+        fi
+        
+        echo "Keep-alive ping completed at $(date)"
+
+    - name: Log Keep-Alive Status
+      if: always()
+      run: |
+        echo "Keep-alive job status: ${{ job.status }}"
+        echo "Timestamp: $(date -u)"

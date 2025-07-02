@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Keep Alive Ping</title>
+    <meta name="robots" content="noindex, nofollow">
+    <meta charset="UTF-8">
+</head>
+<body>
+    <div id="response">
+        <h1>🔄 Keep-Alive Ping Received</h1>
+        <p><strong>Status:</strong> ✅ Server Active</p>
+        <p><strong>Timestamp:</strong> <span id="timestamp"></span></p>
+        <p><strong>Server Time:</strong> <span id="serverTime"></span></p>
+        <p><strong>Uptime Check:</strong> <span id="uptime">Running</span></p>
+    </div>
+    
+    <script>
+        // Set timestamps
+        const now = new Date();
+        document.getElementById('timestamp').textContent = now.toISOString();
+        document.getElementById('serverTime').textContent = now.toLocaleString();
+        
+        // Log the ping (for debugging)
+        console.log('Keep-alive ping received at:', now.toISOString());
+        
+        // Optional: Send a signal back to confirm server is responsive
+        fetch('/health.html', { method: 'HEAD' })
+            .then(() => {
+                document.getElementById('uptime').innerHTML = '<span style="color: green;">✅ Healthy</span>';
+            })
+            .catch(() => {
+                document.getElementById('uptime').innerHTML = '<span style="color: red;">⚠️ Warning</span>';
+            });
+    </script>
+    
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 600px;
+            margin: 50px auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        #response {
+            background: white;
+            padding: 30px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        h1 { color: #2d3748; }
+        p { margin: 10px 0; }
+        strong { color: #4a5568; }
+    </style>
+</body>
+</html>

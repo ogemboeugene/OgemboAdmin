@@ -1,8 +1,8 @@
 import axios from 'axios';
 import { getAccessToken, getRefreshToken, setTokens, clearTokens, isTokenExpired } from '../../utils/tokenUtils';
 
-// Define base API URL - using local backend running on port 3000
-const API_BASE_URL = 'https://ogemboadminbackend.onrender.com/api';
+// Define base API URL - using environment variable with fallback
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000/api';
 
 /**
  * Normalize team member data to handle different input formats
